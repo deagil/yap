@@ -1,0 +1,157 @@
+import { tool } from "ai";
+import { z } from "zod";
+import * as fs from "fs/promises";
+import * as path from "path";
+
+interface GrepMatch {
+  file: string;
+  line: number;
+  content: string;
+}
+
+async function grepFile(
+  filePath: string,
+  pattern: RegExp,
+  maxMatchesPerFile: number
+): Promise<GrepMatch[]> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    const lines = content.split("\n");
+    const matches: GrepMatch[] = [];
+
+    for (let i = 0; i < lines.length && matches.length < maxMatchesPerFile; i++) {
+      const line = lines[i];
+      if (line !== undefined && pattern.test(line)) {
+        matches.push({
+          file: filePath,
+          line: i + 1,
+          content: line.slice(0, 200),
+        });
+      }
+    }
+
+    return matches;
+  } catch {
+    return [];
+  }
+}
+
+async function walkDirectory(
+  dir: string,
+  glob?: string
+): Promise<string[]> {
+  const files: string[] = [];
+
+  async function walk(currentDir: string) {
+    try {
+      const entries = await fs.readdir(currentDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+
+        if (entry.name.startsWith(".") || entry.name === "node_modules") {
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          if (glob) {
+            const ext = path.extname(entry.name);
+            const globExt = glob.startsWith("*") ? glob.slice(1) : glob;
+            if (ext === globExt || entry.name.endsWith(globExt)) {
+              files.push(fullPath);
+            }
+          } else {
+            files.push(fullPath);
+          }
+        }
+      }
+    } catch {
+      // Skip directories we can't read
+    }
+  }
+
+  await walk(dir);
+  return files;
+}
+
+export const grepTool = tool({
+  description: `Search for patterns in files using regex.
+
+USAGE:
+- Uses JavaScript regex syntax
+- Search a specific file or directory
+- Filter by glob pattern (e.g., "*.ts", "*.js")
+- Results are limited to 100 matches total, 10 per file
+
+IMPORTANT:
+- ALWAYS use this tool for search tasks instead of bash grep/rg
+- Use caseSensitive: false for case-insensitive search
+- For complex multi-step searches, consider using the Task tool`,
+  inputSchema: z.object({
+    pattern: z.string().describe("Regex pattern to search for"),
+    path: z
+      .string()
+      .describe("File or directory to search in (absolute path)"),
+    glob: z
+      .string()
+      .optional()
+      .describe("Glob pattern to filter files (e.g., '*.ts')"),
+    caseSensitive: z
+      .boolean()
+      .optional()
+      .describe("Case-sensitive search. Default: true"),
+  }),
+  execute: async ({
+    pattern,
+    path: searchPath,
+    glob,
+    caseSensitive = true,
+  }) => {
+    try {
+      const flags = caseSensitive ? "g" : "gi";
+      const regex = new RegExp(pattern, flags);
+
+      const absolutePath = path.isAbsolute(searchPath)
+        ? searchPath
+        : path.resolve(searchPath);
+
+      const stats = await fs.stat(absolutePath);
+      let files: string[];
+
+      if (stats.isDirectory()) {
+        files = await walkDirectory(absolutePath, glob);
+      } else {
+        files = [absolutePath];
+      }
+
+      const allMatches: GrepMatch[] = [];
+      const maxTotal = 100;
+      const maxPerFile = 10;
+
+      for (const file of files) {
+        if (allMatches.length >= maxTotal) break;
+
+        const remaining = maxTotal - allMatches.length;
+        const limit = Math.min(maxPerFile, remaining);
+        const matches = await grepFile(file, regex, limit);
+        allMatches.push(...matches);
+      }
+
+      return {
+        success: true,
+        pattern,
+        matchCount: allMatches.length,
+        filesSearched: files.length,
+        matches: allMatches,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        error: `Grep failed: ${message}`,
+      };
+    }
+  },
+});

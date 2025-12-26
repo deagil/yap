@@ -1,15 +1,29 @@
 {
   "name": "cc-clone-ai-sdk",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "bin": {
+    "deep-agent": "./src/cli/index.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./agent": "./src/agent/index.ts",
+    "./cli": "./src/cli/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "^22"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "ai": "^6.0.3"
+    "ai": "^6.0.3",
+    "zod": "^3.24.0"
   }
 }
