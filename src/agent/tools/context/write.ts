@@ -11,6 +11,7 @@ function isPathWithinDirectory(filePath: string, directory: string): boolean {
 }
 
 export const writeFileTool = tool({
+  needsApproval: true,
   description: `Write content to a file on the filesystem.
 
 USAGE:
@@ -66,6 +67,7 @@ IMPORTANT:
 });
 
 export const editFileTool = tool({
+  needsApproval: true,
   description: `Perform exact string replacement in a file.
 
 USAGE:

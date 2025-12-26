@@ -80,6 +80,7 @@ async function executeCommand(
 }
 
 export const bashTool = tool({
+  needsApproval: true,
   description: `Execute a bash command in the user's shell.
 
 USAGE:

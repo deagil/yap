@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import { isToolUIPart, getToolName } from "ai";
+import { isToolUIPart, getToolName, type ChatAddToolApproveResponseFunction, lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { renderMarkdown } from "./lib/markdown.js";
 import { useChat } from "@ai-sdk/react";
 import { createAgentTransport } from "./transport.js";
@@ -46,14 +46,24 @@ const ReasoningPart = memo(function ReasoningPart({ text }: { text: string }) {
 });
 
 // Tool wrapper - not memoized to allow spinner animations
-function ToolPartWrapper({ part }: { part: TUIAgentUIToolPart }) {
-  return <ToolCall part={part} />;
+function ToolPartWrapper({
+  part,
+  onApprovalResponse,
+}: {
+  part: TUIAgentUIToolPart;
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
+}) {
+  return <ToolCall part={part} onApprovalResponse={onApprovalResponse} />;
 }
 
-function renderPart(part: TUIAgentUIMessagePart, key: string) {
+function renderPart(
+  part: TUIAgentUIMessagePart,
+  key: string,
+  onApprovalResponse?: ChatAddToolApproveResponseFunction,
+) {
   // Handle tool parts (both static and dynamic)
   if (isToolUIPart(part)) {
-    return <ToolPartWrapper key={key} part={part} />;
+    return <ToolPartWrapper key={key} part={part} onApprovalResponse={onApprovalResponse} />;
   }
 
   switch (part.type) {
@@ -96,13 +106,15 @@ const UserMessage = memo(function UserMessage({
 // Memoized assistant message component
 const AssistantMessage = memo(function AssistantMessage({
   message,
+  onApprovalResponse,
 }: {
   message: TUIAgentUIMessage;
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
 }) {
   return (
     <Box flexDirection="column">
       {message.parts.map((part, index) =>
-        renderPart(part, `${message.id}-${index}`),
+        renderPart(part, `${message.id}-${index}`, onApprovalResponse),
       )}
     </Box>
   );
@@ -111,14 +123,16 @@ const AssistantMessage = memo(function AssistantMessage({
 // Memoized message renderer
 const Message = memo(function Message({
   message,
+  onApprovalResponse,
 }: {
   message: TUIAgentUIMessage;
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
 }) {
   if (message.role === "user") {
     return <UserMessage message={message} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessage message={message} />;
+    return <AssistantMessage message={message} onApprovalResponse={onApprovalResponse} />;
   }
   return null;
 });
@@ -153,13 +167,15 @@ const Timer = memo(function Timer({
 // Memoized messages list
 const MessagesList = memo(function MessagesList({
   messages,
+  onApprovalResponse,
 }: {
   messages: TUIAgentUIMessage[];
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
 }) {
   return (
     <Box flexDirection="column">
       {messages.map((message) => (
-        <Message key={message.id} message={message} />
+        <Message key={message.id} message={message} onApprovalResponse={onApprovalResponse} />
       ))}
     </Box>
   );
@@ -246,12 +262,23 @@ export function App({ agent, options }: AppProps) {
     [agent, options?.agentOptions],
   );
 
-  const { messages, sendMessage, status, stop, error } =
+  const { messages, sendMessage, status, stop, error, addToolApprovalResponse } =
     useChat<TUIAgentUIMessage>({
       transport,
+      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses
     });
 
   const isStreaming = status === "streaming" || status === "submitted";
+
+  const hasPendingApproval = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "assistant") {
+      return lastMessage.parts.some(
+        (p) => isToolUIPart(p) && p.state === "approval-requested"
+      );
+    }
+    return false;
+  }, [messages]);
 
   // Handle escape key to abort
   useInput((input, key) => {
@@ -305,7 +332,7 @@ export function App({ agent, options }: AppProps) {
       />
 
       {/* Render all messages */}
-      <MessagesList messages={messages} />
+      <MessagesList messages={messages} onApprovalResponse={addToolApprovalResponse} />
 
       {/* Error display */}
       <ErrorDisplay error={error} />
@@ -315,13 +342,15 @@ export function App({ agent, options }: AppProps) {
         <StreamingStatusBar messages={messages} startTime={startTime} />
       )}
 
-      {/* Input box */}
-      <InputBox
-        onSubmit={handleSubmit}
-        autoAcceptMode={autoAcceptMode}
-        onToggleAutoAccept={toggleAutoAccept}
-        disabled={isStreaming}
-      />
+      {/* Input box - hidden when approval is pending */}
+      {!hasPendingApproval && (
+        <InputBox
+          onSubmit={handleSubmit}
+          autoAcceptMode={autoAcceptMode}
+          onToggleAutoAccept={toggleAutoAccept}
+          disabled={isStreaming}
+        />
+      )}
     </Box>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, type ReactNode } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import type { TUIAgentUIToolPart } from "../types";
-import { getToolName } from "ai";
+import { getToolName, type ChatAddToolApproveResponseFunction } from "ai";
 
 type DiffLine = {
   type: "context" | "addition" | "removal" | "separator";
@@ -24,32 +24,82 @@ function ToolSpinner() {
   return <Text color="yellow">{SPINNER_FRAMES[frame]} </Text>;
 }
 
+function ApprovalButtons({
+  approvalId,
+  onApprovalResponse,
+}: {
+  approvalId: string;
+  onApprovalResponse: ChatAddToolApproveResponseFunction;
+}) {
+  const [selected, setSelected] = useState(0);
+
+  useInput((input, key) => {
+    const goUp = key.upArrow || input === "k" || (key.ctrl && input === "p");
+    const goDown = key.downArrow || input === "j" || (key.ctrl && input === "n");
+    if (goUp || goDown) {
+      setSelected((prev) => (prev === 0 ? 1 : 0));
+    }
+    if (key.return) {
+      onApprovalResponse({ id: approvalId, approved: selected === 0 });
+    }
+  });
+
+  return (
+    <Box flexDirection="column" marginTop={1} marginLeft={2}>
+      <Text>Do you want to proceed?</Text>
+      <Box flexDirection="column" marginTop={1}>
+        <Text>
+          {selected === 0 ? "> " : "  "}
+          <Text color={selected === 0 ? "green" : undefined}>1. Yes</Text>
+        </Text>
+        <Text>
+          {selected === 1 ? "> " : "  "}
+          <Text color={selected === 1 ? "red" : undefined}>2. No</Text>
+        </Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color="gray">Esc to cancel</Text>
+      </Box>
+    </Box>
+  );
+}
+
 function ToolLayout({
   name,
   summary,
   output,
   error,
   running,
+  approvalRequested,
+  approvalId,
+  onApprovalResponse,
 }: {
   name: string;
   summary: string;
   output?: ReactNode;
   error?: string;
   running: boolean;
+  approvalRequested?: boolean;
+  approvalId?: string;
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
 }) {
-  const dotColor = running ? "yellow" : error ? "red" : "green";
+  const dotColor = approvalRequested ? "yellow" : running ? "yellow" : error ? "red" : "green";
 
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
       <Box>
         {running ? <ToolSpinner /> : <Text color={dotColor}>● </Text>}
-        <Text bold color={running ? "yellow" : "white"}>
+        <Text bold color={running || approvalRequested ? "yellow" : "white"}>
           {name}
         </Text>
         <Text color="gray">(</Text>
         <Text color="cyan">{summary}</Text>
         <Text color="gray">)</Text>
       </Box>
+
+      {approvalRequested && approvalId && onApprovalResponse && (
+        <ApprovalButtons approvalId={approvalId} onApprovalResponse={onApprovalResponse} />
+      )}
 
       {output && (
         <Box paddingLeft={2}>
@@ -76,6 +126,9 @@ function FileChangeLayout({
   lines,
   error,
   running,
+  approvalRequested,
+  approvalId,
+  onApprovalResponse,
 }: {
   action: "Create" | "Update";
   filePath: string;
@@ -84,16 +137,20 @@ function FileChangeLayout({
   lines: DiffLine[];
   error?: string;
   running: boolean;
+  approvalRequested?: boolean;
+  approvalId?: string;
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
 }) {
-  const dotColor = running ? "yellow" : error ? "red" : "green";
+  const dotColor = approvalRequested ? "yellow" : running ? "yellow" : error ? "red" : "green";
   const maxWidth = 80;
+  const showDiff = approvalRequested || (!running && !error);
 
   return (
     <Box flexDirection="column" marginTop={1} marginBottom={1}>
       {/* Header: ● Update(src/tui/lib/markdown.ts) */}
       <Box>
         {running ? <ToolSpinner /> : <Text color={dotColor}>● </Text>}
-        <Text bold color={running ? "yellow" : "white"}>
+        <Text bold color={running || approvalRequested ? "yellow" : "white"}>
           {action}
         </Text>
         <Text color="gray">(</Text>
@@ -102,7 +159,7 @@ function FileChangeLayout({
       </Box>
 
       {/* Subheader: └ Updated src/file.ts with X additions and Y removals */}
-      {!running && !error && (
+      {showDiff && (
         <Box paddingLeft={2}>
           <Text color="gray">└ </Text>
           <Text>
@@ -117,7 +174,7 @@ function FileChangeLayout({
       )}
 
       {/* Diff lines */}
-      {!running && !error && lines.length > 0 && (
+      {showDiff && lines.length > 0 && (
         <Box flexDirection="column" paddingLeft={4}>
           {lines.map((line, i) => (
             <Box key={i}>
@@ -158,6 +215,11 @@ function FileChangeLayout({
             </Box>
           ))}
         </Box>
+      )}
+
+      {/* Approval buttons */}
+      {approvalRequested && approvalId && onApprovalResponse && (
+        <ApprovalButtons approvalId={approvalId} onApprovalResponse={onApprovalResponse} />
       )}
 
       {error && (
@@ -252,10 +314,18 @@ function createEditDiffLines(
   return { lines: result, additions, removals };
 }
 
-export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
+export function ToolCall({
+  part,
+  onApprovalResponse,
+}: {
+  part: TUIAgentUIToolPart;
+  onApprovalResponse?: ChatAddToolApproveResponseFunction;
+}) {
   const running =
     part.state === "input-streaming" || part.state === "input-available";
+  const approvalRequested = part.state === "approval-requested";
   const error = part.state === "output-error" ? part.errorText : undefined;
+  const approvalId = approvalRequested ? (part as { approval?: { id: string } }).approval?.id : undefined;
 
   switch (part.type) {
     case "tool-read": {
@@ -288,6 +358,9 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
           lines={running ? [] : lines}
           error={error}
           running={running}
+          approvalRequested={approvalRequested}
+          approvalId={approvalId}
+          onApprovalResponse={onApprovalResponse}
         />
       );
     }
@@ -307,6 +380,9 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
           lines={running ? [] : lines}
           error={error}
           running={running}
+          approvalRequested={approvalRequested}
+          approvalId={approvalId}
+          onApprovalResponse={onApprovalResponse}
         />
       );
     }
@@ -363,6 +439,9 @@ export function ToolCall({ part }: { part: TUIAgentUIToolPart }) {
           }
           error={error}
           running={running}
+          approvalRequested={approvalRequested}
+          approvalId={approvalId}
+          onApprovalResponse={onApprovalResponse}
         />
       );
     }
