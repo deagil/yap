@@ -1,14 +1,21 @@
-import { type ChatTransport, convertToModelMessages, smoothStream } from "ai";
+import {
+  type ChatTransport,
+  type LanguageModelUsage,
+  convertToModelMessages,
+  smoothStream,
+} from "ai";
 import type { TUIAgent, TUIAgentCallOptions, TUIAgentUIMessage } from "./types";
 
 export type AgentTransportOptions = {
   agent: TUIAgent;
   agentOptions: TUIAgentCallOptions;
+  onUsageUpdate?: (usage: LanguageModelUsage) => void;
 };
 
 export function createAgentTransport({
   agent,
   agentOptions,
+  onUsageUpdate,
 }: AgentTransportOptions): ChatTransport<TUIAgentUIMessage> {
   return {
     sendMessages: async ({ messages, abortSignal }) => {
@@ -23,6 +30,11 @@ export function createAgentTransport({
         options: agentOptions,
         abortSignal: abortSignal ?? undefined,
         experimental_transform: smoothStream(),
+      });
+
+      // Capture usage after stream completes (non-blocking)
+      result.totalUsage.then((usage) => {
+        onUsageUpdate?.(usage);
       });
 
       return result.toUIMessageStream();

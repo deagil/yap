@@ -187,7 +187,6 @@ const StreamingStatusBar = memo(function StreamingStatusBar({
     <StatusBar
       isStreaming={true}
       elapsedSeconds={elapsedSeconds}
-      tokens={0}
       status={statusText}
     />
   );
@@ -268,6 +267,8 @@ export function App({ options }: AppProps) {
           autoAcceptMode={state.autoAcceptMode}
           onToggleAutoAccept={cycleAutoAcceptMode}
           disabled={isStreaming}
+          inputTokens={state.usage.inputTokens ?? 0}
+          contextLimit={state.contextLimit}
         />
       )}
     </Box>

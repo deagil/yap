@@ -10,6 +10,8 @@ type InputBoxProps = {
   autoAcceptMode: AutoAcceptMode;
   onToggleAutoAccept: () => void;
   disabled?: boolean;
+  inputTokens?: number;
+  contextLimit?: number;
 };
 
 function getAutoAcceptLabel(mode: AutoAcceptMode): string {
@@ -34,6 +36,33 @@ function getAutoAcceptColor(mode: AutoAcceptMode): string {
   }
 }
 
+function formatTokens(tokens: number): string {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}k`;
+  }
+  return String(tokens);
+}
+
+// Memoized context usage indicator
+const ContextUsageIndicator = memo(function ContextUsageIndicator({
+  inputTokens,
+  contextLimit,
+}: {
+  inputTokens: number;
+  contextLimit: number;
+}) {
+  if (inputTokens === 0) return null;
+
+  const percentage =
+    contextLimit > 0 ? Math.round((inputTokens / contextLimit) * 100) : 0;
+
+  return (
+    <Text color="gray">
+      {formatTokens(inputTokens)}/{formatTokens(contextLimit)} ({percentage}%)
+    </Text>
+  );
+});
+
 // Memoized auto-accept indicator
 const AutoAcceptIndicator = memo(function AutoAcceptIndicator({
   mode
@@ -54,7 +83,9 @@ export const InputBox = memo(function InputBox({
   onSubmit,
   autoAcceptMode,
   onToggleAutoAccept,
-  disabled = false
+  disabled = false,
+  inputTokens = 0,
+  contextLimit = 0,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -236,8 +267,14 @@ export const InputBox = memo(function InputBox({
         visible={suggestions.length > 0}
       />
 
-      {/* Auto-accept indicator */}
-      <AutoAcceptIndicator mode={autoAcceptMode} />
+      {/* Bottom row: auto-accept (left) and context usage (right) */}
+      <Box justifyContent="space-between">
+        <AutoAcceptIndicator mode={autoAcceptMode} />
+        <ContextUsageIndicator
+          inputTokens={inputTokens}
+          contextLimit={contextLimit}
+        />
+      </Box>
     </Box>
   );
 });

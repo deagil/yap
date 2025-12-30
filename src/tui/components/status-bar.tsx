@@ -20,7 +20,6 @@ function Spinner() {
 type StatusBarProps = {
   isStreaming: boolean;
   elapsedSeconds: number;
-  tokens: number;
   status?: string;
 };
 
@@ -31,13 +30,6 @@ function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}m ${secs}s`;
-}
-
-function formatTokens(tokens: number): string {
-  if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(1)}k`;
-  }
-  return String(tokens);
 }
 
 // Status indicator - not memoized to allow spinner animation
@@ -59,17 +51,16 @@ function StatusIndicator({
   return <Text color="green">✓ {status || "Done"}</Text>;
 }
 
-// Memoized time/token display - this part changes frequently so isolated
+// Memoized time display
 const StatusMeta = memo(function StatusMeta({
   elapsedSeconds,
-  tokens
 }: {
   elapsedSeconds: number;
-  tokens: number;
 }) {
   return (
     <Text color="gray">
-      {" "}({formatTime(elapsedSeconds)} · ↓ {formatTokens(tokens)} tokens · esc to interrupt)
+      {" "}
+      ({formatTime(elapsedSeconds)} · esc to interrupt)
     </Text>
   );
 });
@@ -78,8 +69,7 @@ const StatusMeta = memo(function StatusMeta({
 export function StatusBar({
   isStreaming,
   elapsedSeconds,
-  tokens,
-  status
+  status,
 }: StatusBarProps) {
   if (!isStreaming && !status) {
     return null;
@@ -88,7 +78,7 @@ export function StatusBar({
   return (
     <Box marginTop={1}>
       <StatusIndicator isStreaming={isStreaming} status={status} />
-      <StatusMeta elapsedSeconds={elapsedSeconds} tokens={tokens} />
+      <StatusMeta elapsedSeconds={elapsedSeconds} />
     </Box>
   );
 }

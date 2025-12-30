@@ -3,8 +3,13 @@ import React, {
   useContext,
   useState,
   useMemo,
+  useCallback,
   type ReactNode,
 } from "react";
+import {
+  type LanguageModelUsage,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+} from "ai";
 import { Chat } from "@ai-sdk/react";
 import { createAgentTransport } from "./transport.js";
 import type {
@@ -13,12 +18,14 @@ import type {
   TUIAgentUIMessage,
   AutoAcceptMode,
 } from "./types.js";
-import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
+import { getContextLimit } from "../agent/utils/model-context-limits.js";
 
 type ChatState = {
   model?: string;
   autoAcceptMode: AutoAcceptMode;
   workingDirectory?: string;
+  usage: LanguageModelUsage;
+  contextLimit: number;
 };
 
 type ChatContextValue = {
@@ -40,6 +47,21 @@ type ChatProviderProps = {
   workingDirectory?: string;
 };
 
+const DEFAULT_USAGE: LanguageModelUsage = {
+  inputTokens: undefined,
+  outputTokens: undefined,
+  totalTokens: undefined,
+  inputTokenDetails: {
+    noCacheTokens: undefined,
+    cacheReadTokens: undefined,
+    cacheWriteTokens: undefined,
+  },
+  outputTokenDetails: {
+    textTokens: undefined,
+    reasoningTokens: undefined,
+  },
+};
+
 export function ChatProvider({
   children,
   agent,
@@ -48,10 +70,22 @@ export function ChatProvider({
   workingDirectory,
 }: ChatProviderProps) {
   const [autoAcceptMode, setAutoAcceptMode] = useState<AutoAcceptMode>("edits");
+  const [usage, setUsage] = useState<LanguageModelUsage>(DEFAULT_USAGE);
+
+  const contextLimit = useMemo(() => getContextLimit(model ?? ""), [model]);
+
+  const handleUsageUpdate = useCallback((newUsage: LanguageModelUsage) => {
+    setUsage(newUsage);
+  }, []);
 
   const transport = useMemo(
-    () => createAgentTransport({ agent, agentOptions }),
-    [agent, agentOptions],
+    () =>
+      createAgentTransport({
+        agent,
+        agentOptions,
+        onUsageUpdate: handleUsageUpdate,
+      }),
+    [agent, agentOptions, handleUsageUpdate],
   );
 
   const chat = useMemo(
@@ -69,8 +103,10 @@ export function ChatProvider({
       model,
       autoAcceptMode,
       workingDirectory,
+      usage,
+      contextLimit,
     }),
-    [model, autoAcceptMode, workingDirectory],
+    [model, autoAcceptMode, workingDirectory, usage, contextLimit],
   );
 
   const cycleAutoAcceptMode = () => {

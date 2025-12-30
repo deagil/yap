@@ -1,4 +1,4 @@
-import type { DynamicToolUIPart, InferAgentUIMessage, InferUITools, ToolLoopAgent, ToolUIPart } from "ai";
+import type { DynamicToolUIPart, InferAgentUIMessage, InferUITools,  ToolUIPart } from "ai";
 import type { tuiAgent } from "./config";
 
 export type TUIAgent = typeof tuiAgent;
