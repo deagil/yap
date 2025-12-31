@@ -11,6 +11,7 @@ import { ToolCall } from "./components/tool-call.js";
 import { StatusBar } from "./components/status-bar.js";
 import { InputBox } from "./components/input-box.js";
 import { Header } from "./components/header.js";
+import { tuiAgentModelId } from "./config.js";
 import type {
   TUIOptions,
   TUIAgentUIMessagePart,
@@ -279,7 +280,7 @@ export function App({ options }: AppProps) {
       <Header
         name={options?.header?.name}
         version={options?.header?.version}
-        model={options?.header?.model}
+        model={options?.header?.model ?? tuiAgentModelId}
         cwd={state.workingDirectory}
       />
 
