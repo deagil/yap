@@ -1,7 +1,6 @@
 import React, {
   createContext,
   useContext,
-  useState,
   useCallback,
   useRef,
   type ReactNode,
@@ -12,12 +11,15 @@ type ReasoningDuration = {
   endTime?: number;
 };
 
+export type ThinkingState = {
+  isThinking: boolean;
+  thinkingDuration: number | null; // null = not started, number = seconds
+};
+
 type ReasoningContextValue = {
-  isExpanded: boolean;
-  toggleExpanded: () => void;
   startReasoning: (messageId: string) => void;
   endReasoning: (messageId: string) => void;
-  getReasoningDuration: (messageId: string) => number;
+  getThinkingState: (messageId: string) => ThinkingState;
 };
 
 const ReasoningContext = createContext<ReasoningContextValue | undefined>(
@@ -25,12 +27,7 @@ const ReasoningContext = createContext<ReasoningContextValue | undefined>(
 );
 
 export function ReasoningProvider({ children }: { children: ReactNode }) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const durationsRef = useRef<Map<string, ReasoningDuration>>(new Map());
-
-  const toggleExpanded = useCallback(() => {
-    setIsExpanded((prev) => !prev);
-  }, []);
 
   const startReasoning = useCallback((messageId: string) => {
     if (!durationsRef.current.has(messageId)) {
@@ -45,21 +42,24 @@ export function ReasoningProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const getReasoningDuration = useCallback((messageId: string): number => {
+  const getThinkingState = useCallback((messageId: string): ThinkingState => {
     const duration = durationsRef.current.get(messageId);
-    if (!duration) return 0;
-    const endTime = duration.endTime ?? Date.now();
-    return Math.max(1, Math.round((endTime - duration.startTime) / 1000));
+    if (!duration) {
+      return { isThinking: false, thinkingDuration: null };
+    }
+    if (!duration.endTime) {
+      return { isThinking: true, thinkingDuration: null };
+    }
+    const seconds = Math.max(1, Math.round((duration.endTime - duration.startTime) / 1000));
+    return { isThinking: false, thinkingDuration: seconds };
   }, []);
 
   return (
     <ReasoningContext.Provider
       value={{
-        isExpanded,
-        toggleExpanded,
         startReasoning,
         endReasoning,
-        getReasoningDuration,
+        getThinkingState,
       }}
     >
       {children}

@@ -14,7 +14,6 @@ import { TaskGroupView } from "./components/task-group-view.js";
 import { StatusBar } from "./components/status-bar.js";
 import { InputBox } from "./components/input-box.js";
 import { Header } from "./components/header.js";
-import { ReasoningBlock } from "./components/reasoning-block.js";
 import { pasteCollapseLineThreshold, tuiAgentModelId } from "./config.js";
 import type {
   TUIOptions,
@@ -40,43 +39,31 @@ const TextPart = memo(function TextPart({ text }: { text: string }) {
   );
 });
 
-type ReasoningPartWrapperProps = {
-  text: string;
-  messageId: string;
-  isStreaming: boolean;
-};
-
-const ReasoningPartWrapper = memo(function ReasoningPartWrapper({
-  text,
+// Tracks reasoning timing without rendering anything
+const ReasoningTracker = memo(function ReasoningTracker({
   messageId,
-  isStreaming,
-}: ReasoningPartWrapperProps) {
-  const { isExpanded, startReasoning, endReasoning, getReasoningDuration } =
-    useReasoningContext();
+  hasReasoning,
+  isReasoningComplete,
+}: {
+  messageId: string;
+  hasReasoning: boolean;
+  isReasoningComplete: boolean;
+}) {
+  const { startReasoning, endReasoning } = useReasoningContext();
 
-  // Track reasoning timing
   useEffect(() => {
-    if (text) {
+    if (hasReasoning) {
       startReasoning(messageId);
     }
-  }, [messageId, text, startReasoning]);
+  }, [messageId, hasReasoning, startReasoning]);
 
-  // Mark reasoning as ended when no longer streaming
   useEffect(() => {
-    if (!isStreaming && text) {
+    if (isReasoningComplete) {
       endReasoning(messageId);
     }
-  }, [isStreaming, messageId, text, endReasoning]);
+  }, [isReasoningComplete, messageId, endReasoning]);
 
-  const durationSeconds = getReasoningDuration(messageId);
-
-  return (
-    <ReasoningBlock
-      text={text}
-      durationSeconds={durationSeconds}
-      isExpanded={isExpanded}
-    />
-  );
+  return null;
 });
 
 function ToolPartWrapper({
@@ -114,15 +101,8 @@ function renderPart(
       return <TextPart key={key} text={part.text} />;
 
     case "reasoning":
-      if (!part.text) return null;
-      return (
-        <ReasoningPartWrapper
-          key={key}
-          text={part.text}
-          messageId={messageId}
-          isStreaming={isStreaming}
-        />
-      );
+      // Reasoning is tracked but not displayed inline (shown in status bar instead)
+      return null;
 
     default:
       return null;
@@ -183,6 +163,34 @@ const AssistantMessage = memo(function AssistantMessage({
   activeApprovalId: string | null;
   isStreaming: boolean;
 }) {
+  // Check if this message has reasoning and if reasoning is complete
+  // Reasoning is complete when there are non-reasoning parts with content after reasoning
+  const { hasReasoning, isReasoningComplete } = useMemo(() => {
+    let foundReasoning = false;
+    let hasContentAfterReasoning = false;
+
+    for (const part of message.parts) {
+      if (part.type === "reasoning" && part.text) {
+        foundReasoning = true;
+      } else if (foundReasoning) {
+        // Check if there's meaningful content after reasoning
+        if (part.type === "text" && part.text) {
+          hasContentAfterReasoning = true;
+          break;
+        }
+        if (isToolUIPart(part)) {
+          hasContentAfterReasoning = true;
+          break;
+        }
+      }
+    }
+
+    return {
+      hasReasoning: foundReasoning,
+      isReasoningComplete: foundReasoning && (hasContentAfterReasoning || !isStreaming),
+    };
+  }, [message.parts, isStreaming]);
+
   // Group consecutive task parts together, keeping them in linear order
   const renderGroups = useMemo(() => {
     const groups: RenderGroup[] = [];
@@ -225,6 +233,11 @@ const AssistantMessage = memo(function AssistantMessage({
 
   return (
     <Box flexDirection="column">
+      <ReasoningTracker
+        messageId={message.id}
+        hasReasoning={hasReasoning}
+        isReasoningComplete={isReasoningComplete}
+      />
       {renderGroups.map((group) => {
         if (group.type === "task-group") {
           return (
@@ -326,30 +339,34 @@ function useStatusText(messages: TUIAgentUIMessage[]): string {
 
 const StreamingStatusBar = memo(function StreamingStatusBar({
   messages,
-  startTime,
 }: {
   messages: TUIAgentUIMessage[];
-  startTime: number | null;
 }) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const { getThinkingState } = useReasoningContext();
   const statusText = useStatusText(messages);
+  const [, forceUpdate] = useState(0);
 
+  // Get the current message ID to track thinking state
+  const lastMessage = messages[messages.length - 1];
+  const messageId = lastMessage?.id ?? "";
+  const thinkingState = getThinkingState(messageId);
+
+  // Force re-render periodically to update thinking duration while thinking
   useEffect(() => {
-    if (startTime) {
-      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    if (thinkingState.isThinking) {
       const timer = setInterval(() => {
-        setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+        forceUpdate((n) => n + 1);
       }, 1000);
       return () => clearInterval(timer);
     }
     return undefined;
-  }, [startTime]);
+  }, [thinkingState.isThinking]);
 
   return (
     <StatusBar
       isStreaming={true}
-      elapsedSeconds={elapsedSeconds}
       status={statusText}
+      thinkingState={thinkingState}
     />
   );
 });
@@ -367,8 +384,6 @@ const InterruptedIndicator = memo(function InterruptedIndicator() {
 function AppContent({ options }: AppProps) {
   const { exit } = useApp();
   const { chat, state, cycleAutoAcceptMode } = useChatContext();
-  const { toggleExpanded } = useReasoningContext();
-  const [startTime, setStartTime] = useState<number | null>(null);
   const [wasInterrupted, setWasInterrupted] = useState(false);
 
   const { messages, sendMessage, status, stop, error } = useChat({
@@ -409,15 +424,10 @@ function AppContent({ options }: AppProps) {
       stop();
       exit();
     }
-    // Toggle reasoning visibility with ctrl+p
-    if (input === "p" && key.ctrl) {
-      toggleExpanded();
-    }
   });
 
   useEffect(() => {
     if (options?.initialPrompt) {
-      setStartTime(Date.now());
       sendMessage({ text: options.initialPrompt });
     }
   }, []);
@@ -425,7 +435,6 @@ function AppContent({ options }: AppProps) {
   const handleSubmit = useCallback(
     (prompt: string, files?: FileUIPart[]) => {
       if (!isStreaming) {
-        setStartTime(Date.now());
         sendMessage({ text: prompt, files });
       }
     },
@@ -452,7 +461,7 @@ function AppContent({ options }: AppProps) {
       <ErrorDisplay error={error} />
 
       {isStreaming && (
-        <StreamingStatusBar messages={messages} startTime={startTime} />
+        <StreamingStatusBar messages={messages} />
       )}
 
       {!hasPendingApproval && (

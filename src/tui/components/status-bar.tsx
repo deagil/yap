@@ -1,8 +1,6 @@
-import React, { memo, useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL = 80;
+import type { ThinkingState } from "../reasoning-context.js";
 
 const SILLY_WORDS = [
   "Thinking",
@@ -23,19 +21,6 @@ const SILLY_WORDS = [
 ];
 const SILLY_WORD_INTERVAL = 2000;
 
-function Spinner() {
-  const [frame, setFrame] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFrame((prev) => (prev + 1) % SPINNER_FRAMES.length);
-    }, SPINNER_INTERVAL);
-    return () => clearInterval(timer);
-  }, []);
-
-  return <Text color="yellow">{SPINNER_FRAMES[frame]} </Text>;
-}
-
 function useSillyWord() {
   const [index, setIndex] = useState(() => Math.floor(Math.random() * SILLY_WORDS.length));
 
@@ -51,61 +36,61 @@ function useSillyWord() {
 
 type StatusBarProps = {
   isStreaming: boolean;
-  elapsedSeconds: number;
   status?: string;
+  thinkingState: ThinkingState;
 };
 
-function formatTime(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds}s`;
+function getThinkingMeta(thinkingState: ThinkingState): string {
+  if (thinkingState.thinkingDuration !== null) {
+    return `thought for ${thinkingState.thinkingDuration}s`;
   }
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
+  if (thinkingState.isThinking) {
+    return "thinking";
+  }
+  return "";
 }
 
-// Status indicator - not memoized to allow spinner animation
+// Status indicator - not memoized to allow animation
 function StatusIndicator({
   isStreaming,
-  status
+  status,
+  thinkingState,
 }: {
   isStreaming: boolean;
   status?: string;
+  thinkingState: ThinkingState;
 }) {
   const sillyWord = useSillyWord();
   const isDefaultStatus = !status || status === "Thinking...";
   const displayStatus = isDefaultStatus ? `${sillyWord}...` : status;
 
+  // Determine prefix: + while streaming/thinking not done, * when thinking completed
+  const hasThinkingCompleted = thinkingState.thinkingDuration !== null;
+  const prefix = hasThinkingCompleted ? "*" : "+";
+
+  // Build the meta text
+  const thinkingMeta = getThinkingMeta(thinkingState);
+  const metaText = thinkingMeta
+    ? `(esc to interrupt · ${thinkingMeta})`
+    : "(esc to interrupt)";
+
   if (isStreaming) {
     return (
       <>
-        <Spinner />
+        <Text color="yellow">{prefix} </Text>
         <Text color="yellow">{displayStatus}</Text>
+        <Text color="gray"> {metaText}</Text>
       </>
     );
   }
   return <Text color="green">✓ {status || "Done"}</Text>;
 }
 
-// Memoized time display
-const StatusMeta = memo(function StatusMeta({
-  elapsedSeconds,
-}: {
-  elapsedSeconds: number;
-}) {
-  return (
-    <Text color="gray">
-      {" "}
-      ({formatTime(elapsedSeconds)} · esc to interrupt)
-    </Text>
-  );
-});
-
-// Not memoized to allow spinner animation
+// Not memoized to allow animation
 export function StatusBar({
   isStreaming,
-  elapsedSeconds,
   status,
+  thinkingState,
 }: StatusBarProps) {
   if (!isStreaming && !status) {
     return null;
@@ -113,8 +98,11 @@ export function StatusBar({
 
   return (
     <Box marginTop={1}>
-      <StatusIndicator isStreaming={isStreaming} status={status} />
-      <StatusMeta elapsedSeconds={elapsedSeconds} />
+      <StatusIndicator
+        isStreaming={isStreaming}
+        status={status}
+        thinkingState={thinkingState}
+      />
     </Box>
   );
 }
