@@ -77,6 +77,7 @@ import {
   shouldShowThinkingIndicator,
 } from "@/lib/chat-streaming-state";
 import { ACCEPT_IMAGE_TYPES, isValidImageType } from "@/lib/image-utils";
+import { DEFAULT_CONTEXT_LIMIT } from "@/lib/models";
 import { DEFAULT_SANDBOX_TIMEOUT_MS } from "@/lib/sandbox/config";
 import { streamdownPlugins } from "@/lib/streamdown-config";
 import { cn } from "@/lib/utils";
@@ -717,6 +718,7 @@ export function SessionChatContent(_props: unknown) {
     session,
     chatInfo,
     chat,
+    contextLimit,
     stopChatStream,
     retryChatStream,
     initialMessages,
@@ -2784,11 +2786,10 @@ export function SessionChatContent(_props: unknown) {
                       </span>
                     )
                   )}
-                  {/* TODO: Derive context limit from model ID instead of hardcoding */}
                   <ContextUsageIndicator
                     inputTokens={tokenUsage.inputTokens}
                     outputTokens={tokenUsage.outputTokens}
-                    contextLimit={200_000}
+                    contextLimit={contextLimit ?? DEFAULT_CONTEXT_LIMIT}
                   />
                 </div>
 

@@ -4,6 +4,7 @@ import type { WebAgentUIMessage } from "@/app/types";
 import { DiffsProvider } from "@/components/diffs-provider";
 import { getChatById, getChatMessages } from "@/lib/db/sessions";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
+import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { SessionChatContent } from "./session-chat-content";
 import { SessionChatProvider } from "./session-chat-context";
@@ -24,6 +25,14 @@ function isOptimisticChatId(chatId: string): boolean {
 
 const OPTIMISTIC_CHAT_RETRY_DELAY_MS = 100;
 const OPTIMISTIC_CHAT_RETRY_ATTEMPTS = 50;
+
+async function getInitialModels() {
+  try {
+    return await fetchAvailableLanguageModelsWithContext();
+  } catch {
+    return [];
+  }
+}
 
 async function getChatByIdWithRetry(
   chatId: string,
@@ -83,9 +92,10 @@ export default async function SessionChatPage({
   }
 
   // Fetch chat, messages, and models in parallel
-  const [chat, dbMessages] = await Promise.all([
+  const [chat, dbMessages, initialModels] = await Promise.all([
     getChatByIdWithRetry(chatId, sessionId),
     getChatMessages(chatId),
+    getInitialModels(),
   ]);
   if (!chat) {
     if (isOptimisticChatId(chatId)) {
@@ -100,6 +110,7 @@ export default async function SessionChatPage({
         session={sessionRecord}
         chat={chat}
         initialMessages={initialMessages}
+        initialModels={initialModels}
       >
         <SessionChatContent />
       </SessionChatProvider>
