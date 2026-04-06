@@ -170,14 +170,8 @@ function CheckStateIcon({
 /*  Single check row                                                   */
 /* ------------------------------------------------------------------ */
 
-function CheckRunRow({
-  checkRun,
-  onFix,
-}: {
-  checkRun: PullRequestCheckRun;
-  onFix?: (checkName: string) => void;
-}) {
-  const nameEl = (
+function CheckRunRow({ checkRun }: { checkRun: PullRequestCheckRun }) {
+  const inner = (
     <div className="flex min-w-0 items-center gap-2 py-0.5">
       <CheckStateIcon state={checkRun.state} />
       <span
@@ -192,39 +186,22 @@ function CheckRunRow({
     </div>
   );
 
-  const showFix = checkRun.state === "failed" && onFix;
+  if (checkRun.detailsUrl) {
+    return (
+      /* oxlint-disable-next-line nextjs/no-html-link-for-pages */
+      <a
+        href={checkRun.detailsUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group/check block"
+        aria-label={`Open details for ${checkRun.name}`}
+      >
+        {inner}
+      </a>
+    );
+  }
 
-  return (
-    <div className="flex items-center gap-1">
-      <div className="min-w-0 flex-1">
-        {checkRun.detailsUrl ? (
-          /* oxlint-disable-next-line nextjs/no-html-link-for-pages */
-          <a
-            href={checkRun.detailsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group/check block"
-            aria-label={`Open details for ${checkRun.name}`}
-          >
-            {nameEl}
-          </a>
-        ) : (
-          nameEl
-        )}
-      </div>
-      {showFix && (
-        <button
-          type="button"
-          onClick={() => onFix(checkRun.name)}
-          className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={`Fix ${checkRun.name}`}
-        >
-          <Sparkles className="h-3 w-3" />
-          Fix
-        </button>
-      )}
-    </div>
-  );
+  return inner;
 }
 
 /* ------------------------------------------------------------------ */
@@ -235,12 +212,10 @@ function GroupSection({
   state,
   checkRuns,
   defaultOpen,
-  onFixCheck,
 }: {
   state: PullRequestCheckState;
   checkRuns: PullRequestCheckRun[];
   defaultOpen: boolean;
-  onFixCheck?: (checkName: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -262,7 +237,7 @@ function GroupSection({
         <ul className="ml-4 space-y-0.5">
           {checkRuns.map((cr, i) => (
             <li key={`${cr.name}-${cr.detailsUrl ?? "no-url"}-${i}`}>
-              <CheckRunRow checkRun={cr} onFix={onFixCheck} />
+              <CheckRunRow checkRun={cr} />
             </li>
           ))}
         </ul>
@@ -287,8 +262,8 @@ interface CheckRunsListProps {
   isRefreshing?: boolean;
   /** True on initial load before any data arrives */
   isLoading?: boolean;
-  /** Called when the user clicks "Fix" on a failing check */
-  onFixCheck?: (checkName: string) => void;
+  /** Called when the user clicks "Fix errors" — receives all failing check runs */
+  onFixChecks?: (failedRuns: PullRequestCheckRun[]) => void;
 }
 
 export function CheckRunsList({
@@ -297,7 +272,7 @@ export function CheckRunsList({
   onRefresh,
   isRefreshing,
   isLoading,
-  onFixCheck,
+  onFixChecks,
 }: CheckRunsListProps) {
   const passed =
     checks?.passed ?? checkRuns.filter((c) => c.state === "passed").length;
@@ -394,6 +369,21 @@ export function CheckRunsList({
 
         {!showLoading && (
           <>
+            {/* Fix errors button — only when there are failures */}
+            {failed > 0 && onFixChecks && (
+              <button
+                type="button"
+                className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFixChecks(checkRuns.filter((cr) => cr.state === "failed"));
+                }}
+              >
+                <Sparkles className="h-3 w-3" />
+                Fix errors
+              </button>
+            )}
+
             {/* Refresh icon (stop propagation so it doesn't toggle) */}
             {onRefresh && (
               <button
@@ -464,7 +454,6 @@ export function CheckRunsList({
                       state={state}
                       checkRuns={runs}
                       defaultOpen
-                      onFixCheck={onFixCheck}
                     />
                   );
                 })}
@@ -473,7 +462,7 @@ export function CheckRunsList({
               <ul className="space-y-0.5">
                 {sorted.map((cr, i) => (
                   <li key={`${cr.name}-${cr.detailsUrl ?? "no-url"}-${i}`}>
-                    <CheckRunRow checkRun={cr} onFix={onFixCheck} />
+                    <CheckRunRow checkRun={cr} />
                   </li>
                 ))}
               </ul>

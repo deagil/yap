@@ -11,7 +11,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MergeReadinessResponse } from "@/app/api/sessions/[sessionId]/merge-readiness/route";
 import type { MergePullRequestResponse } from "@/app/api/sessions/[sessionId]/merge/route";
 import type { Session } from "@/lib/db/schema";
-import type { PullRequestMergeMethod } from "@/lib/github/client";
+import type {
+  PullRequestCheckRun,
+  PullRequestMergeMethod,
+} from "@/lib/github/client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,8 +41,8 @@ interface MergePrDialogProps {
   onMerged?: (result: MergePullRequestResponse) => Promise<void> | void;
   onViewDiff?: () => void;
   canViewDiff?: boolean;
-  /** Called when the user clicks "Fix" on a failing check */
-  onFixCheck?: (checkName: string) => void;
+  /** Called when the user clicks "Fix errors" — receives all failing check runs */
+  onFixChecks?: (failedRuns: PullRequestCheckRun[]) => void;
 }
 
 const mergeMethodLabels: Record<PullRequestMergeMethod, string> = {
@@ -67,7 +70,7 @@ export function MergePrDialog({
   onMerged,
   onViewDiff,
   canViewDiff = false,
-  onFixCheck,
+  onFixChecks,
 }: MergePrDialogProps) {
   const [readiness, setReadiness] = useState<MergeReadinessResponse | null>(
     null,
@@ -296,7 +299,7 @@ export function MergePrDialog({
             }}
             isRefreshing={isLoadingReadiness}
             isLoading={isLoadingReadiness && !readiness}
-            onFixCheck={onFixCheck}
+            onFixChecks={onFixChecks}
           />
 
           <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 p-3">

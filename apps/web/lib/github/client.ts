@@ -22,6 +22,11 @@ export type PullRequestCheckRun = {
   status: string | null;
   conclusion: string | null;
   detailsUrl: string | null;
+  output?: {
+    title: string | null;
+    summary: string | null;
+    text: string | null;
+  };
 };
 
 export type PullRequestMergeReadiness = {
@@ -494,6 +499,13 @@ export async function getPullRequestMergeReadiness(params: {
         status: checkRun.status,
         conclusion: checkRun.conclusion,
         detailsUrl: checkRun.details_url ?? null,
+        output: checkRun.output
+          ? {
+              title: checkRun.output.title ?? null,
+              summary: checkRun.output.summary ?? null,
+              text: checkRun.output.text ?? null,
+            }
+          : undefined,
       }));
 
       checksSummary = summarizeCheckRuns(

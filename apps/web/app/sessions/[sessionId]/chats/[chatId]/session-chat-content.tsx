@@ -3843,11 +3843,29 @@ export function SessionChatContent({
           onMerged={handleMerged}
           onViewDiff={() => setShowDiffPanel(true)}
           canViewDiff={supportsDiff && Boolean(diff || session.cachedDiff)}
-          onFixCheck={(checkName) => {
+          onFixChecks={(failedRuns) => {
             setMergeDialogOpen(false);
-            void sendMessageWithPendingState({
-              text: `# Fix Failing Check: ${checkName}\n\nThe "${checkName}" check is failing on this pull request. Please investigate the failure, identify the root cause, and push a fix.`,
+
+            const sections = failedRuns.map((run) => {
+              let section = `## ${run.name}`;
+              if (run.output?.title) {
+                section += `\n**${run.output.title}**`;
+              }
+              if (run.output?.summary) {
+                section += `\n${run.output.summary}`;
+              }
+              if (run.output?.text) {
+                section += `\n\n<details>\n<summary>Full output</summary>\n\n${run.output.text}\n</details>`;
+              }
+              if (run.detailsUrl) {
+                section += `\n[View details](${run.detailsUrl})`;
+              }
+              return section;
             });
+
+            const text = `# Fix Failing Checks\n\nThe following ${failedRuns.length === 1 ? "check is" : "checks are"} failing on this pull request. Please investigate the ${failedRuns.length === 1 ? "failure" : "failures"}, identify the root cause, and push a fix.\n\n${sections.join("\n\n---\n\n")}`;
+
+            void sendMessageWithPendingState({ text });
           }}
         />
       )}
