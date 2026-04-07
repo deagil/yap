@@ -3854,7 +3854,7 @@ export function SessionChatContent({
               try {
                 const jobIds = runsWithIds.map((r) => r.id).join(",");
                 const res = await fetch(
-                  `/api/sessions/${session.id}/check-logs?jobIds=${jobIds}`,
+                  `/api/sessions/${session.id}/checks/logs?jobIds=${jobIds}`,
                 );
                 if (res.ok) {
                   const data = (await res.json()) as {
