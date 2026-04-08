@@ -38,6 +38,7 @@ export function useInlineQuestion({
     answers: {},
   }));
 
+  const isActive = questions.length > 0;
   const currentQuestion = questions[state.currentIndex] as Question | undefined;
   const isLastQuestion = state.currentIndex >= questions.length - 1;
 
@@ -133,8 +134,9 @@ export function useInlineQuestion({
   const placeholder =
     "Type your own answer, or leave this blank to use the selected option";
 
-  // Escape to cancel
+  // Escape to cancel (only when active)
   useEffect(() => {
+    if (!isActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -143,12 +145,16 @@ export function useInlineQuestion({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
+  }, [isActive, onCancel]);
 
-  // Reset state when questions change
+  // Reset state when questions change (skip stable empty array)
+  const questionsKey = questions.map((q) => q.question).join("\0");
   useEffect(() => {
-    setState({ currentIndex: 0, answers: {} });
-  }, [questions]);
+    if (questions.length > 0) {
+      setState({ currentIndex: 0, answers: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionsKey]);
 
   const questionHeaderUI: ReactNode = currentQuestion ? (
     <div className="space-y-2.5 px-4 pt-3">
@@ -226,8 +232,6 @@ export function useInlineQuestion({
       )}
     </div>
   ) : null;
-
-  const isActive = questions.length > 0;
 
   return {
     isActive,

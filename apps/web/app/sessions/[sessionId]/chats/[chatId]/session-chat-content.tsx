@@ -151,6 +151,9 @@ import "streamdown/styles.css";
 /** Minimum interval between textarea-focus activity pings (5 minutes). */
 const ACTIVITY_PING_THROTTLE_MS = 5 * 60 * 1000;
 
+/** Stable empty array to avoid re-render loops when no question is pending. */
+const EMPTY_QUESTIONS: [] = [];
+
 const DiffViewer = dynamic(
   () => import("./diff-viewer").then((m) => m.DiffViewer),
   { ssr: false },
@@ -2305,11 +2308,12 @@ export function SessionChatContent({
   }, [questionToolCallId, addToolOutput]);
 
   // Inline question UI hook — renders question flow inside the prompt box
+  const pendingQuestions =
+    hasPendingQuestion && pendingQuestionPart
+      ? pendingQuestionPart.input.questions
+      : EMPTY_QUESTIONS;
   const inlineQuestion = useInlineQuestion({
-    questions:
-      hasPendingQuestion && pendingQuestionPart
-        ? pendingQuestionPart.input.questions
-        : [],
+    questions: pendingQuestions,
     onSubmit: handleQuestionSubmit,
     onCancel: handleQuestionCancel,
     textareaValue: input,
