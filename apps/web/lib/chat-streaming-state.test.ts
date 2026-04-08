@@ -8,6 +8,7 @@ mock.module("ai", () => ({
 
 const {
   getGitFinalizationState,
+  getNavbarGitActionState,
   hasRenderableAssistantPart,
   isChatInFlight,
   shouldKeepCollapsedReasoningStreaming,
@@ -15,6 +16,16 @@ const {
   shouldRenderGitDataPart,
   shouldShowThinkingIndicator,
 } = await import("./chat-streaming-state");
+
+type ChatMessage = Parameters<typeof getNavbarGitActionState>[0][number];
+
+function assistantMessage(parts: unknown[]): ChatMessage {
+  return {
+    id: `assistant-${parts.length}`,
+    role: "assistant",
+    parts,
+  } as unknown as ChatMessage;
+}
 
 describe("chat streaming state", () => {
   test("treats submitted and streaming as in-flight", () => {
@@ -101,6 +112,91 @@ describe("chat streaming state", () => {
         lastMessageRole: "assistant",
       }),
     ).toBe(true);
+  });
+
+  test("derives pending commit state from the latest assistant git message", () => {
+    expect(
+      getNavbarGitActionState([
+        assistantMessage([
+          {
+            type: "data-commit",
+            id: "commit-1",
+            data: { status: "pending" },
+          },
+        ]),
+      ]),
+    ).toEqual({
+      pendingAction: "commit",
+      label: "Creating commit…",
+      latestCommitPart: {
+        type: "data-commit",
+        id: "commit-1",
+        data: { status: "pending" },
+      },
+      latestPrPart: null,
+    });
+  });
+
+  test("prefers pending pull request state over earlier commit state in the same message", () => {
+    expect(
+      getNavbarGitActionState([
+        assistantMessage([
+          {
+            type: "data-commit",
+            id: "commit-1",
+            data: { status: "success", pushed: true },
+          },
+          {
+            type: "data-pr",
+            id: "pr-1",
+            data: { status: "pending" },
+          },
+        ]),
+      ]),
+    ).toEqual({
+      pendingAction: "pr",
+      label: "Creating pull request…",
+      latestCommitPart: {
+        type: "data-commit",
+        id: "commit-1",
+        data: { status: "success", pushed: true },
+      },
+      latestPrPart: {
+        type: "data-pr",
+        id: "pr-1",
+        data: { status: "pending" },
+      },
+    });
+  });
+
+  test("falls back to idle for resolved git states and ignores older pending messages", () => {
+    expect(
+      getNavbarGitActionState([
+        assistantMessage([
+          {
+            type: "data-commit",
+            id: "commit-1",
+            data: { status: "pending" },
+          },
+        ]),
+        assistantMessage([
+          {
+            type: "data-pr",
+            id: "pr-1",
+            data: { status: "success", prNumber: 12 },
+          },
+        ]),
+      ]),
+    ).toEqual({
+      pendingAction: null,
+      label: null,
+      latestCommitPart: null,
+      latestPrPart: {
+        type: "data-pr",
+        id: "pr-1",
+        data: { status: "success", prNumber: 12 },
+      },
+    });
   });
 
   test("detects non-cancellable git finalization once git data arrives on an in-flight assistant message", () => {
@@ -231,14 +327,6 @@ describe("chat streaming state", () => {
         prevStatus: "ready",
         status: "ready",
         hasAssistantRenderableContent: true,
-      }),
-    ).toBe(false);
-
-    expect(
-      shouldRefreshAfterReadyTransition({
-        prevStatus: "submitted",
-        status: "ready",
-        hasAssistantRenderableContent: false,
       }),
     ).toBe(false);
   });

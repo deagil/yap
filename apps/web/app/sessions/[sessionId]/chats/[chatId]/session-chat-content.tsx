@@ -112,9 +112,9 @@ import { useImageAttachments } from "@/hooks/use-image-attachments";
 import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { useSessionChats } from "@/hooks/use-session-chats";
 import { useSlashCommands } from "@/hooks/use-slash-commands";
-import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
   getGitFinalizationState,
+  getNavbarGitActionState,
   hasRenderableAssistantPart,
   isChatInFlight as isChatInFlightStatus,
   isGitDataPart,
@@ -136,7 +136,6 @@ import {
   useSessionChatWorkspaceContext,
 } from "./session-chat-context";
 import { useStreamRecovery } from "./hooks/use-stream-recovery";
-import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import { useCodeEditor } from "./hooks/use-code-editor";
 import { useDevServer } from "./hooks/use-dev-server";
 import { CodeEditorMenuItems } from "./code-editor-menu-items";
@@ -1024,7 +1023,6 @@ export function SessionChatContent({
     useState<string | null | undefined>(undefined);
   const hasMounted = useHasMounted();
   const isMobile = useIsMobile();
-  const { preferences } = useUserPreferences();
   const isIosDevice = useMemo(() => {
     if (typeof navigator === "undefined") {
       return false;
@@ -1201,22 +1199,6 @@ export function SessionChatContent({
     });
   }, [session.id]);
 
-  const autoCommitEnabled = Boolean(
-    session.cloneUrl &&
-    session.repoOwner &&
-    session.repoName &&
-    (session.autoCommitPushOverride ?? preferences?.autoCommitPush ?? false),
-  );
-  const { isAutoCommitting, markAutoCommitStarted } = useAutoCommitStatus(
-    autoCommitEnabled,
-    gitStatus,
-    () => {
-      void refreshGitStatus().catch(() => undefined);
-      void refreshDiff().catch(() => undefined);
-      void refreshFiles().catch(() => undefined);
-      void checkBranchAndPr().catch(() => undefined);
-    },
-  );
   const {
     messages,
     error,
@@ -1284,6 +1266,11 @@ export function SessionChatContent({
     () => (hasMounted ? messages : initialMessages),
     [hasMounted, messages, initialMessages],
   );
+  const navbarGitActionState = useMemo(
+    () => getNavbarGitActionState(renderMessages),
+    [renderMessages],
+  );
+  const pendingNavbarGitLabel = navbarGitActionState.label;
   // Track explicit user-initiated stops so the UI can immediately reflect the
   // idle state even if the AI SDK `status` is stuck (common on iOS/Safari where
   // fetch abort doesn't cleanly settle the hook status).
@@ -2151,10 +2138,6 @@ export function SessionChatContent({
       status === "ready" &&
       isMountedRef.current
     ) {
-      if (!userStopped) {
-        markAutoCommitStarted();
-      }
-
       const refreshCompletedTurnState = async () => {
         await requestStatusSync("force").catch(() => undefined);
         await refreshGitStatus().catch(() => undefined);
@@ -2194,8 +2177,6 @@ export function SessionChatContent({
     session.cloneUrl,
     session.repoOwner,
     session.repoName,
-    markAutoCommitStarted,
-    userStopped,
   ]);
 
   // Track whether we've auto-attempted sandbox startup for this page load.
@@ -2697,24 +2678,29 @@ export function SessionChatContent({
 
   const isDeploymentStale = branchPreviewUrlChangeBaseline !== undefined;
 
-  // When auto-commit lands (transitions from committing to clean), mark the
-  // current preview deployment as stale so the UI shows "Deploying…" until
-  // the new Vercel build finishes.
-  const prevIsAutoCommittingRef = useRef(isAutoCommitting);
+  // When a pending commit resolves to a pushed commit, mark the current
+  // preview deployment as stale so the UI shows "Deploying…" until the new
+  // Vercel build finishes.
+  const prevLatestCommitPartRef = useRef(navbarGitActionState.latestCommitPart);
   useEffect(() => {
-    const wasAutoCommitting = prevIsAutoCommittingRef.current;
-    prevIsAutoCommittingRef.current = isAutoCommitting;
+    const previousCommitPart = prevLatestCommitPartRef.current;
+    const currentCommitPart = navbarGitActionState.latestCommitPart;
+    prevLatestCommitPartRef.current = currentCommitPart;
 
     if (
-      wasAutoCommitting &&
-      !isAutoCommitting &&
+      previousCommitPart &&
+      currentCommitPart &&
+      previousCommitPart.id === currentCommitPart.id &&
+      previousCommitPart.data.status === "pending" &&
+      currentCommitPart.data.status === "success" &&
+      currentCommitPart.data.pushed &&
       (hasExistingPr || hasBranchPreviewLookup)
     ) {
       setBranchPreviewUrlChangeBaseline(prDeploymentUrl);
       refreshPrDeployment().catch(() => undefined);
     }
   }, [
-    isAutoCommitting,
+    navbarGitActionState.latestCommitPart,
     hasExistingPr,
     hasBranchPreviewLookup,
     prDeploymentUrl,
@@ -2906,11 +2892,19 @@ export function SessionChatContent({
             {/* Overflow menu + primary git action */}
             <div className="flex items-center gap-1">
               {hasRepo ? (
-                hasExistingPr ? (
+                pendingNavbarGitLabel ? (
+                  <CommitActionHeaderButton
+                    label={commitActionLabel}
+                    pendingLabel={pendingNavbarGitLabel}
+                    isChatReady={isChatReady}
+                    hasUncommittedChanges={false}
+                    onClick={() => undefined}
+                  />
+                ) : hasExistingPr ? (
                   showCommitAction ? (
                     <CommitActionHeaderButton
                       label={commitActionLabel}
-                      isAutoCommitting={isAutoCommitting}
+                      pendingLabel={null}
                       isChatReady={isChatReady}
                       hasUncommittedChanges={hasUncommittedGitChanges}
                       onClick={() => setCommitDialogOpen(true)}
@@ -2971,7 +2965,7 @@ export function SessionChatContent({
                 ) : showCommitAction ? (
                   <CommitActionHeaderButton
                     label={commitActionLabel}
-                    isAutoCommitting={isAutoCommitting}
+                    pendingLabel={null}
                     isChatReady={isChatReady}
                     hasUncommittedChanges={hasUncommittedGitChanges}
                     onClick={() => setCommitDialogOpen(true)}
@@ -3115,79 +3109,91 @@ export function SessionChatContent({
                     </DropdownMenuItem>
                   )}
                   {hasRepo ? (
-                    hasExistingPr ? (
-                      <>
-                        {prDeploymentUrl && (
+                    <>
+                      {pendingNavbarGitLabel && (
+                        <CommitActionMenuItem
+                          label={commitActionLabel}
+                          pendingLabel={pendingNavbarGitLabel}
+                          isChatReady={isChatReady}
+                          onClick={() => undefined}
+                        />
+                      )}
+                      {hasExistingPr ? (
+                        <>
+                          {prDeploymentUrl && (
+                            <DropdownMenuItem
+                              onClick={() => {
+                                window.open(
+                                  prDeploymentUrl,
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                );
+                              }}
+                            >
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Preview
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
-                            onClick={() => {
-                              window.open(
-                                prDeploymentUrl,
-                                "_blank",
-                                "noopener,noreferrer",
-                              );
-                            }}
+                            onClick={openExistingPr}
+                            disabled={!existingPrUrl}
                           >
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            Preview
+                            <GitPullRequest className="mr-2 h-4 w-4" />
+                            View PR #{session.prNumber}
                           </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          onClick={openExistingPr}
-                          disabled={!existingPrUrl}
-                        >
-                          <GitPullRequest className="mr-2 h-4 w-4" />
-                          View PR #{session.prNumber}
-                        </DropdownMenuItem>
-                        {canMergeAndArchive && (
-                          <DropdownMenuItem
-                            onClick={() => setMergeDialogOpen(true)}
-                          >
-                            <GitMerge className="mr-2 h-4 w-4" />
-                            Merge & Archive
-                          </DropdownMenuItem>
-                        )}
-                        {canCloseAndArchive && (
-                          <DropdownMenuItem
-                            onClick={() => setCloseDialogOpen(true)}
-                          >
-                            <GitPullRequestClosed className="mr-2 h-4 w-4" />
-                            Close & Archive
-                          </DropdownMenuItem>
-                        )}
-                        {showCommitAction && (
-                          <CommitActionMenuItem
-                            label={commitActionLabel}
-                            isAutoCommitting={isAutoCommitting}
-                            isChatReady={isChatReady}
-                            onClick={() => setCommitDialogOpen(true)}
-                          />
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {showCommitAction && (
-                          <CommitActionMenuItem
-                            label={commitActionLabel}
-                            isAutoCommitting={isAutoCommitting}
-                            isChatReady={isChatReady}
-                            onClick={() => setCommitDialogOpen(true)}
-                          />
-                        )}
-                        {prDeploymentUrl && (
-                          <DropdownMenuItem onClick={openPreviewOrPr}>
-                            <ExternalLink className="mr-2 h-4 w-4" />
-                            Preview
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem
-                          disabled={!canCreatePr || !isCreatePrBranchReady}
-                          onClick={() => setPrDialogOpen(true)}
-                        >
-                          <GitPullRequest className="mr-2 h-4 w-4" />
-                          Create PR
-                        </DropdownMenuItem>
-                      </>
-                    )
+                          {canMergeAndArchive && (
+                            <DropdownMenuItem
+                              onClick={() => setMergeDialogOpen(true)}
+                            >
+                              <GitMerge className="mr-2 h-4 w-4" />
+                              Merge & Archive
+                            </DropdownMenuItem>
+                          )}
+                          {canCloseAndArchive && (
+                            <DropdownMenuItem
+                              onClick={() => setCloseDialogOpen(true)}
+                            >
+                              <GitPullRequestClosed className="mr-2 h-4 w-4" />
+                              Close & Archive
+                            </DropdownMenuItem>
+                          )}
+                          {!pendingNavbarGitLabel && showCommitAction && (
+                            <CommitActionMenuItem
+                              label={commitActionLabel}
+                              pendingLabel={null}
+                              isChatReady={isChatReady}
+                              onClick={() => setCommitDialogOpen(true)}
+                            />
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {!pendingNavbarGitLabel && showCommitAction && (
+                            <CommitActionMenuItem
+                              label={commitActionLabel}
+                              pendingLabel={null}
+                              isChatReady={isChatReady}
+                              onClick={() => setCommitDialogOpen(true)}
+                            />
+                          )}
+                          {prDeploymentUrl && (
+                            <DropdownMenuItem onClick={openPreviewOrPr}>
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Preview
+                            </DropdownMenuItem>
+                          )}
+                          {!pendingNavbarGitLabel && (
+                            <DropdownMenuItem
+                              disabled={!canCreatePr || !isCreatePrBranchReady}
+                              onClick={() => setPrDialogOpen(true)}
+                            >
+                              <GitPullRequest className="mr-2 h-4 w-4" />
+                              Create PR
+                            </DropdownMenuItem>
+                          )}
+                        </>
+                      )}
+                    </>
                   ) : supportsRepoCreation ? (
                     <DropdownMenuItem onClick={() => setRepoDialogOpen(true)}>
                       <FolderGit2 className="mr-2 h-4 w-4" />
