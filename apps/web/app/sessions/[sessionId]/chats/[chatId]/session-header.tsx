@@ -18,7 +18,8 @@ import { useSessionLayout } from "@/app/sessions/[sessionId]/session-layout-cont
  */
 export function SessionHeader() {
   const { toggleSidebar } = useSidebar();
-  const { gitPanelOpen, toggleGitPanel, setShareRequested } = useGitPanel();
+  const { gitPanelOpen, toggleGitPanel, hasActionNeeded, setShareRequested } =
+    useGitPanel();
   const { session } = useSessionLayout();
 
   return (
@@ -98,12 +99,15 @@ export function SessionHeader() {
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-7 w-7 shrink-0",
+                  "relative h-7 w-7 shrink-0",
                   gitPanelOpen && "bg-accent text-accent-foreground",
                 )}
                 onClick={toggleGitPanel}
               >
                 <PanelRight className="h-4 w-4" />
+                {hasActionNeeded && !gitPanelOpen && (
+                  <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Toggle right sidebar</TooltipContent>

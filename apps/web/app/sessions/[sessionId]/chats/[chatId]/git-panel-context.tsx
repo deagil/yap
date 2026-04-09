@@ -44,6 +44,10 @@ type GitPanelContextValue = {
   diffScope: DiffScope;
   setDiffScope: (scope: DiffScope) => void;
 
+  /** Whether there are uncommitted changes that need attention */
+  hasActionNeeded: boolean;
+  setHasActionNeeded: (needed: boolean) => void;
+
   /** Share dialog trigger (set by per-chat page, called by header) */
   shareRequested: boolean;
   setShareRequested: (requested: boolean) => void;
@@ -63,6 +67,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
   const [focusedDiffFile, setFocusedDiffFile] = useState<string | null>(null);
   const [changesTabDismissed, setChangesTabDismissed] = useState(false);
   const [diffScope, setDiffScope] = useState<DiffScope>("uncommitted");
+  const [hasActionNeeded, setHasActionNeeded] = useState(false);
   const [shareRequested, setShareRequested] = useState(false);
   const panelPortalRef = useRef<HTMLDivElement | null>(null);
 
@@ -92,6 +97,8 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       openDiffToFile,
       diffScope,
       setDiffScope,
+      hasActionNeeded,
+      setHasActionNeeded,
       shareRequested,
       setShareRequested,
       panelPortalRef,
@@ -105,6 +112,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       focusedDiffFile,
       openDiffToFile,
       diffScope,
+      hasActionNeeded,
       shareRequested,
     ],
   );

@@ -875,8 +875,13 @@ export function SessionChatContent({
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
   const hasMounted = useHasMounted();
-  const { activeView, shareRequested, setShareRequested, panelPortalRef } =
-    useGitPanel();
+  const {
+    activeView,
+    shareRequested,
+    setShareRequested,
+    setHasActionNeeded,
+    panelPortalRef,
+  } = useGitPanel();
   const { preferences } = useUserPreferences();
   const isIosDevice = useMemo(() => {
     if (typeof navigator === "undefined") {
@@ -2598,6 +2603,11 @@ export function SessionChatContent({
   const showCommitAction =
     hasRepo &&
     (hasUncommittedGitChanges || (hasExistingPr && hasUnpushedCommits));
+
+  // Sync the "action needed" indicator for the right sidebar toggle button
+  useEffect(() => {
+    setHasActionNeeded(showCommitAction);
+  }, [showCommitAction, setHasActionNeeded]);
   const hasOpenPr = hasExistingPr && session.prStatus === "open";
   const _canMergeAndArchive = hasOpenPr && !showCommitAction && !isArchived;
   const _canCloseAndArchive = hasOpenPr && !isArchived;
