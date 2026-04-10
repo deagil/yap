@@ -8,13 +8,6 @@ import {
   type SandboxType,
 } from "@/components/sandbox-selector-compact";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -84,19 +77,30 @@ function getGlobalSkillRefError(params: {
   return duplicateExists ? "That global skill has already been added" : null;
 }
 
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      {children}
+    </h3>
+  );
+}
+
 export function PreferencesSectionSkeleton() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Agent Preferences</CardTitle>
-        <CardDescription>
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-lg font-semibold">Agent Preferences</h2>
+        <p className="text-sm text-muted-foreground">
           Default settings for new sessions. You can override these when
           starting a session or chat.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </p>
+      </div>
+
+      {/* Appearance */}
+      <div className="space-y-4">
+        <SectionHeader>Appearance</SectionHeader>
         <div className="grid gap-2">
-          <Label htmlFor="appearance">Appearance</Label>
+          <Label htmlFor="appearance">Theme</Label>
           <Select disabled>
             <SelectTrigger id="appearance" className="w-full max-w-xs">
               <Skeleton className="h-4 w-24" />
@@ -106,7 +110,13 @@ export function PreferencesSectionSkeleton() {
             Choose between light and dark mode.
           </p>
         </div>
+      </div>
 
+      <div className="border-t border-border/50" />
+
+      {/* Models */}
+      <div className="space-y-4">
+        <SectionHeader>Models</SectionHeader>
         <div className="grid gap-2">
           <Label htmlFor="model">Default Model</Label>
           <Select disabled>
@@ -118,7 +128,21 @@ export function PreferencesSectionSkeleton() {
             The AI model used for new chats.
           </p>
         </div>
+        <div className="grid gap-2">
+          <Label>Subagent Model</Label>
+          <Skeleton className="h-9 w-full max-w-xs" />
+        </div>
+        <div className="grid gap-2">
+          <Label>Custom Model Set</Label>
+          <Skeleton className="h-24 w-full" />
+        </div>
+      </div>
 
+      <div className="border-t border-border/50" />
+
+      {/* Environment */}
+      <div className="space-y-4">
+        <SectionHeader>Environment</SectionHeader>
         <div className="grid gap-2">
           <Label htmlFor="sandbox">Default Sandbox</Label>
           <Select disabled>
@@ -130,7 +154,6 @@ export function PreferencesSectionSkeleton() {
             The execution environment for new sessions.
           </p>
         </div>
-
         <div className="grid gap-2">
           <Label htmlFor="diff-mode">Default Diff Mode</Label>
           <Select disabled>
@@ -142,8 +165,25 @@ export function PreferencesSectionSkeleton() {
             The diff layout used when opening the changes viewer.
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Automation */}
+      <div className="space-y-4">
+        <SectionHeader>Automation</SectionHeader>
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Notifications */}
+      <div className="space-y-4">
+        <SectionHeader>Notifications</SectionHeader>
+        <Skeleton className="h-10 w-full" />
+      </div>
+    </div>
   );
 }
 
@@ -379,17 +419,20 @@ export function PreferencesSection() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Agent Preferences</CardTitle>
-        <CardDescription>
+    <div className="space-y-8">
+      <div>
+        <h2 className="text-lg font-semibold">Agent Preferences</h2>
+        <p className="text-sm text-muted-foreground">
           Default settings for new sessions. You can override these when
           starting a session or chat.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </p>
+      </div>
+
+      {/* Appearance */}
+      <div className="space-y-4">
+        <SectionHeader>Appearance</SectionHeader>
         <div className="grid gap-2">
-          <Label htmlFor="appearance">Appearance</Label>
+          <Label htmlFor="appearance">Theme</Label>
           <Select value={theme} onValueChange={handleThemeChange}>
             <SelectTrigger id="appearance" className="w-full max-w-xs">
               <SelectValue placeholder="Select an appearance" />
@@ -407,6 +450,13 @@ export function PreferencesSection() {
             current browser.
           </p>
         </div>
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Models */}
+      <div className="space-y-4">
+        <SectionHeader>Models</SectionHeader>
 
         <div className="grid gap-2">
           <Label htmlFor="model">Default Model</Label>
@@ -463,6 +513,13 @@ export function PreferencesSection() {
           onSetEnabledModels={handleSetEnabledModels}
           disabled={isSaving}
         />
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Environment */}
+      <div className="space-y-4">
+        <SectionHeader>Environment</SectionHeader>
 
         <div className="grid gap-2">
           <Label htmlFor="sandbox">Default Sandbox</Label>
@@ -509,6 +566,96 @@ export function PreferencesSection() {
             The diff layout used when opening the changes viewer.
           </p>
         </div>
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Automation */}
+      <div className="space-y-4">
+        <SectionHeader>Automation</SectionHeader>
+
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="auto-commit-push">Auto commit and push</Label>
+              <p className="text-xs text-muted-foreground">
+                Automatically commit and push git changes when an agent turn
+                finishes.
+              </p>
+            </div>
+            <Switch
+              id="auto-commit-push"
+              checked={preferences?.autoCommitPush ?? false}
+              onCheckedChange={handleAutoCommitPushChange}
+              disabled={isSaving}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="auto-create-pr">Auto create pull request</Label>
+              <p className="text-xs text-muted-foreground">
+                Automatically open a pull request after auto commit and push for
+                repo-backed sessions.
+              </p>
+            </div>
+            <Switch
+              id="auto-create-pr"
+              checked={preferences?.autoCreatePr ?? false}
+              onCheckedChange={handleAutoCreatePrChange}
+              disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Notifications */}
+      <div className="space-y-4">
+        <SectionHeader>Notifications</SectionHeader>
+
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="alerts-enabled">Alerts</Label>
+              <p className="text-xs text-muted-foreground">
+                Show a notification when a background agent finishes.
+              </p>
+            </div>
+            <Switch
+              id="alerts-enabled"
+              checked={preferences?.alertsEnabled ?? true}
+              onCheckedChange={handleAlertsEnabledChange}
+              disabled={isSaving}
+            />
+          </div>
+          {(preferences?.alertsEnabled ?? true) && (
+            <div className="flex items-center justify-between gap-4 pl-4">
+              <div className="space-y-1">
+                <Label htmlFor="alert-sound-enabled">Alert sound</Label>
+                <p className="text-xs text-muted-foreground">
+                  Play a sound when an alert is shown.
+                </p>
+              </div>
+              <Switch
+                id="alert-sound-enabled"
+                checked={preferences?.alertSoundEnabled ?? true}
+                onCheckedChange={handleAlertSoundEnabledChange}
+                disabled={isSaving}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      {/* Skills */}
+      <div className="space-y-4">
+        <SectionHeader>Skills</SectionHeader>
 
         <div className="grid gap-3">
           <div className="space-y-1">
@@ -607,77 +754,8 @@ export function PreferencesSection() {
             )}
           </div>
         </div>
-
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="auto-commit-push">Auto commit and push</Label>
-              <p className="text-xs text-muted-foreground">
-                Automatically commit and push git changes when an agent turn
-                finishes.
-              </p>
-            </div>
-            <Switch
-              id="auto-commit-push"
-              checked={preferences?.autoCommitPush ?? false}
-              onCheckedChange={handleAutoCommitPushChange}
-              disabled={isSaving}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="auto-create-pr">Auto create pull request</Label>
-              <p className="text-xs text-muted-foreground">
-                Automatically open a pull request after auto commit and push for
-                repo-backed sessions.
-              </p>
-            </div>
-            <Switch
-              id="auto-create-pr"
-              checked={preferences?.autoCreatePr ?? false}
-              onCheckedChange={handleAutoCreatePrChange}
-              disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="alerts-enabled">Alerts</Label>
-              <p className="text-xs text-muted-foreground">
-                Show a notification when a background agent finishes.
-              </p>
-            </div>
-            <Switch
-              id="alerts-enabled"
-              checked={preferences?.alertsEnabled ?? true}
-              onCheckedChange={handleAlertsEnabledChange}
-              disabled={isSaving}
-            />
-          </div>
-          {(preferences?.alertsEnabled ?? true) && (
-            <div className="flex items-center justify-between gap-4 pl-4">
-              <div className="space-y-1">
-                <Label htmlFor="alert-sound-enabled">Alert sound</Label>
-                <p className="text-xs text-muted-foreground">
-                  Play a sound when an alert is shown.
-                </p>
-              </div>
-              <Switch
-                id="alert-sound-enabled"
-                checked={preferences?.alertSoundEnabled ?? true}
-                onCheckedChange={handleAlertSoundEnabledChange}
-                disabled={isSaving}
-              />
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

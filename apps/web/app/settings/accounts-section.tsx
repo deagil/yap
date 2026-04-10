@@ -17,13 +17,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/hooks/use-session";
 import { fetcher } from "@/lib/swr";
@@ -145,26 +138,24 @@ function useGitHubReturnToast() {
 
 export function AccountsSectionSkeleton() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Connected Accounts</CardTitle>
-        <CardDescription>
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Connected Accounts</h3>
+        <p className="text-sm text-muted-foreground">
           Manage GitHub App installations to grant repository access.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-8 w-8 rounded-full" />
-            <div className="space-y-1">
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-3 w-32" />
-            </div>
+        </p>
+      </div>
+      <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/10 p-4">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-8 w-8 rounded-full" />
+          <div className="space-y-1">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-3 w-32" />
           </div>
-          <Skeleton className="h-9 w-24" />
         </div>
-      </CardContent>
-    </Card>
+        <Skeleton className="h-9 w-24" />
+      </div>
+    </div>
   );
 }
 
@@ -320,35 +311,33 @@ export function AccountsSection() {
   // when "Request user authorization during installation" is enabled.
   if (!hasGitHub) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Connected Accounts</CardTitle>
-          <CardDescription>
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Connected Accounts</h3>
+          <p className="text-sm text-muted-foreground">
             Install the GitHub App to grant repository access. You will
             authorize and select repositories in one step on GitHub.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <GitHubIcon className="h-8 w-8" />
-              <div>
-                <p className="text-sm font-medium">GitHub</p>
-                <p className="text-xs text-muted-foreground">
-                  Connect to access private repositories
-                </p>
-              </div>
+          </p>
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/10 p-4">
+          <div className="flex items-center gap-3">
+            <GitHubIcon className="h-8 w-8" />
+            <div>
+              <p className="text-sm font-medium">GitHub</p>
+              <p className="text-xs text-muted-foreground">
+                Connect to access private repositories
+              </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startGitHubInstallFromSettings}
-            >
-              Connect
-            </Button>
           </div>
-        </CardContent>
-      </Card>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={startGitHubInstallFromSettings}
+          >
+            Connect
+          </Button>
+        </div>
+      </div>
     );
   }
 
@@ -358,32 +347,30 @@ export function AccountsSection() {
   const totalCount = orgs?.length ?? 0;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle>Connected Accounts</CardTitle>
-            <CardDescription>
-              {installedCount > 0
-                ? `GitHub App installed on ${installedCount} of ${totalCount} account${totalCount !== 1 ? "s" : ""}.`
-                : "Install the GitHub App on your accounts to enable repository access."}
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing || orgsLoading}
-            >
-              <RefreshCw
-                className={`size-4 ${isRefreshing ? "animate-spin" : ""}`}
-              />
-            </Button>
-          </div>
+    <div className="space-y-4">
+      <div className="flex items-start justify-between">
+        <div className="space-y-1.5">
+          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Connected Accounts</h3>
+          <p className="text-sm text-muted-foreground">
+            {installedCount > 0
+              ? `GitHub App installed on ${installedCount} of ${totalCount} account${totalCount !== 1 ? "s" : ""}.`
+              : "Install the GitHub App on your accounts to enable repository access."}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing || orgsLoading}
+          >
+            <RefreshCw
+              className={`size-4 ${isRefreshing ? "animate-spin" : ""}`}
+            />
+          </Button>
+        </div>
+      </div>
+      <div className="space-y-3">
         {orgsLoading && !orgs ? (
           <div className="space-y-2">
             {[1, 2, 3].map((i) => (
@@ -443,7 +430,7 @@ export function AccountsSection() {
             )}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
