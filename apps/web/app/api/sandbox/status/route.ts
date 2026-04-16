@@ -100,7 +100,7 @@ export async function GET(req: Request): Promise<Response> {
     lifecycleVersion: effectiveSessionRecord.lifecycleVersion,
     lifecycle: {
       serverTime: Date.now(),
-      state: effectiveSessionRecord.lifecycleState,
+      state: effectiveSessionRecord.lifecycleState ?? null,
       lastActivityAt: effectiveSessionRecord.lastActivityAt?.getTime() ?? null,
       hibernateAfter: effectiveSessionRecord.hibernateAfter?.getTime() ?? null,
       sandboxExpiresAt:

@@ -18,13 +18,15 @@ import {
 } from "@/lib/github/repo-identifiers";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
+import type { NewSession } from "@/lib/db/types";
+import { getWorkspaceVercelToken } from "@/lib/vercel/token";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 import {
   isManagedTemplateTrialUser,
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT,
   MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR,
 } from "@/lib/managed-template-trial";
 import { listMatchingVercelProjects } from "@/lib/vercel/projects";
-import { getUserVercelToken } from "@/lib/vercel/token";
 import {
   vercelProjectSelectionSchema,
   type VercelProjectSelection,
@@ -62,11 +64,12 @@ function generateBranchName(username: string, name?: string | null): string {
 async function resolveSessionTitle(
   input: CreateSessionRequest,
   userId: string,
+  workspaceId: string,
 ): Promise<string> {
   if (input.title && input.title.trim()) {
     return input.title.trim();
   }
-  const usedNames = await getUsedSessionTitles(userId);
+  const usedNames = await getUsedSessionTitles(userId, workspaceId);
   return getRandomCityName(usedNames);
 }
 
@@ -91,6 +94,11 @@ export async function GET(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return Response.json({ error: "No workspace selected" }, { status: 400 });
   }
 
   const { searchParams } = new URL(req.url);
@@ -131,12 +139,12 @@ export async function GET(req: Request) {
     const offset = rawOffset ?? 0;
 
     const [sessions, archivedCount] = await Promise.all([
-      getSessionsWithUnreadByUserId(session.user.id, {
+      getSessionsWithUnreadByUserId(session.user.id, workspaceId, {
         status: "archived",
         limit,
         offset,
       }),
-      getArchivedSessionCountByUserId(session.user.id),
+      getArchivedSessionCountByUserId(session.user.id, workspaceId),
     ]);
 
     return Response.json({
@@ -153,16 +161,19 @@ export async function GET(req: Request) {
 
   if (statusParam === "active") {
     const [sessions, archivedCount] = await Promise.all([
-      getSessionsWithUnreadByUserId(session.user.id, {
+      getSessionsWithUnreadByUserId(session.user.id, workspaceId, {
         status: "active",
       }),
-      getArchivedSessionCountByUserId(session.user.id),
+      getArchivedSessionCountByUserId(session.user.id, workspaceId),
     ]);
 
     return Response.json({ sessions, archivedCount });
   }
 
-  const sessions = await getSessionsWithUnreadByUserId(session.user.id);
+  const sessions = await getSessionsWithUnreadByUserId(
+    session.user.id,
+    workspaceId,
+  );
   return Response.json({ sessions });
 }
 
@@ -172,8 +183,16 @@ export async function POST(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return Response.json({ error: "No workspace selected" }, { status: 400 });
+  }
+
   if (isManagedTemplateTrialUser(session, req.url)) {
-    const existingSessionCount = await countSessionsByUserId(session.user.id);
+    const existingSessionCount = await countSessionsByUserId(
+      session.user.id,
+      workspaceId,
+    );
     if (existingSessionCount >= MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT) {
       return Response.json(
         { error: MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR },
@@ -264,14 +283,18 @@ export async function POST(req: Request) {
   }
 
   try {
-    const titlePromise = resolveSessionTitle(body, session.user.id);
-    const preferencesPromise = getUserPreferences(session.user.id);
+    const titlePromise = resolveSessionTitle(
+      body,
+      session.user.id,
+      workspaceId,
+    );
+    const preferencesPromise = getUserPreferences(session.user.id, workspaceId);
 
     let resolvedVercelProject: VercelProjectSelection | null = null;
     const hasRepo = Boolean(repoOwner && repoName);
     if (hasRepo && repoOwner && repoName) {
       if (explicitVercelProject) {
-        const vercelToken = await getUserVercelToken(session.user.id);
+        const vercelToken = await getWorkspaceVercelToken(workspaceId);
         if (!vercelToken) {
           return Response.json(
             { error: "Connect Vercel to select a Vercel project" },
@@ -300,6 +323,7 @@ export async function POST(req: Request) {
 
         await upsertVercelProjectLink({
           userId: session.user.id,
+          workspaceId,
           repoOwner,
           repoName,
           project: matchedProject,
@@ -308,6 +332,7 @@ export async function POST(req: Request) {
       } else if (explicitVercelProject === undefined) {
         resolvedVercelProject = await getVercelProjectLinkByRepo(
           session.user.id,
+          workspaceId,
           repoOwner,
           repoName,
         );
@@ -326,32 +351,52 @@ export async function POST(req: Request) {
     const effectiveAutoCommitPush =
       autoCommitPush ?? preferences.autoCommitPush;
     const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;
+
+    const sessionId = nanoid();
+    const newSession: NewSession = {
+      id: sessionId,
+      workspaceId,
+      userId: session.user.id,
+      title,
+      status: "running",
+      repoOwner: repoOwner ?? null,
+      repoName: repoName ?? null,
+      branch: finalBranch ?? null,
+      cloneUrl: cloneUrl ?? null,
+      vercelProjectId: resolvedVercelProject?.projectId ?? null,
+      vercelProjectName: resolvedVercelProject?.projectName ?? null,
+      vercelTeamId: resolvedVercelProject?.teamId ?? null,
+      vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
+      isNewBranch: isNewBranch ?? false,
+      autoCommitPushOverride: effectiveAutoCommitPush,
+      autoCreatePrOverride: effectiveAutoCommitPush
+        ? effectiveAutoCreatePr
+        : false,
+      globalSkillRefs: preferences.globalSkillRefs,
+      sandboxState: { type: sandboxType },
+      lifecycleState: "provisioning",
+      lifecycleVersion: 0,
+      lastActivityAt: null,
+      sandboxExpiresAt: null,
+      hibernateAfter: null,
+      lifecycleRunId: null,
+      lifecycleError: null,
+      linesAdded: null,
+      linesRemoved: null,
+      prNumber: null,
+      prStatus: null,
+      snapshotUrl: null,
+      snapshotCreatedAt: null,
+      snapshotSizeBytes: null,
+      cachedDiff: null,
+      cachedDiffUpdatedAt: null,
+    };
+
     const result = await createSessionWithInitialChat({
-      session: {
-        id: nanoid(),
-        userId: session.user.id,
-        title,
-        status: "running",
-        repoOwner,
-        repoName,
-        branch: finalBranch,
-        cloneUrl,
-        vercelProjectId: resolvedVercelProject?.projectId ?? null,
-        vercelProjectName: resolvedVercelProject?.projectName ?? null,
-        vercelTeamId: resolvedVercelProject?.teamId ?? null,
-        vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
-        isNewBranch: isNewBranch ?? false,
-        autoCommitPushOverride: effectiveAutoCommitPush,
-        autoCreatePrOverride: effectiveAutoCommitPush
-          ? effectiveAutoCreatePr
-          : false,
-        globalSkillRefs: preferences.globalSkillRefs,
-        sandboxState: { type: sandboxType },
-        lifecycleState: "provisioning",
-        lifecycleVersion: 0,
-      },
+      session: newSession,
       initialChat: {
         id: nanoid(),
+        workspaceId,
         title: "New chat",
         modelId: preferences.defaultModelId,
       },

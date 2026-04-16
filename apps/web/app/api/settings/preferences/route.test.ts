@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
+mock.module("@/lib/workspace/context", () => ({
+  getActiveWorkspaceIdForUser: async () => "workspace-1",
+}));
+
 let currentSession: {
   authProvider?: "vercel" | "github";
   user: { id: string; email?: string };
@@ -29,9 +35,11 @@ mock.module("@/lib/session/get-server-session", () => ({
 }));
 
 mock.module("@/lib/db/user-preferences", () => ({
-  getUserPreferences: async (_userId: string) => preferencesState,
+  getUserPreferences: async (_userId: string, _workspaceId: string) =>
+    preferencesState,
   updateUserPreferences: async (
     _userId: string,
+    _workspaceId: string,
     updates: Record<string, unknown>,
   ) => {
     updateCalls.push(updates);

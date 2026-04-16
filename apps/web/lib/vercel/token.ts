@@ -1,15 +1,13 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
 import { decrypt, encrypt } from "@/lib/crypto";
-import { db } from "@/lib/db/client";
-import { users } from "@/lib/db/schema";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { refreshVercelToken } from "./oauth";
 
-interface UserVercelAuthRow {
-  accessToken: string;
-  refreshToken: string | null;
-  tokenExpiresAt: Date | null;
-  externalId: string;
+interface WorkspaceVercelRow {
+  access_token_encrypted: string;
+  refresh_token_encrypted: string | null;
+  token_expires_at: string | null;
+  vercel_user_external_id: string | null;
 }
 
 export interface UserVercelAuthInfo {
@@ -18,21 +16,21 @@ export interface UserVercelAuthInfo {
   externalId: string;
 }
 
-async function loadUserVercelAuthRow(
-  userId: string,
-): Promise<UserVercelAuthRow | null> {
-  const result = await db
-    .select({
-      accessToken: users.accessToken,
-      refreshToken: users.refreshToken,
-      tokenExpiresAt: users.tokenExpiresAt,
-      externalId: users.externalId,
-    })
-    .from(users)
-    .where(and(eq(users.id, userId), eq(users.provider, "vercel")))
-    .limit(1);
-
-  return result[0] ?? null;
+async function loadWorkspaceVercelRow(
+  workspaceId: string,
+): Promise<WorkspaceVercelRow | null> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("workspace_vercel_connections")
+    .select(
+      "access_token_encrypted, refresh_token_encrypted, token_expires_at, vercel_user_external_id",
+    )
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data as WorkspaceVercelRow | null;
 }
 
 function toAuthInfo(params: {
@@ -47,11 +45,11 @@ function toAuthInfo(params: {
   };
 }
 
-async function refreshUserVercelAuthInfo(
-  userId: string,
-  row: UserVercelAuthRow,
+async function refreshWorkspaceVercelAuth(
+  workspaceId: string,
+  row: WorkspaceVercelRow,
 ): Promise<UserVercelAuthInfo | null> {
-  if (!row.refreshToken) {
+  if (!row.refresh_token_encrypted) {
     return null;
   }
 
@@ -61,7 +59,7 @@ async function refreshUserVercelAuthInfo(
     return null;
   }
 
-  const decryptedRefresh = decrypt(row.refreshToken);
+  const decryptedRefresh = decrypt(row.refresh_token_encrypted);
   const tokens = await refreshVercelToken({
     refreshToken: decryptedRefresh,
     clientId,
@@ -69,79 +67,92 @@ async function refreshUserVercelAuthInfo(
   });
 
   const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-
-  await db
-    .update(users)
-    .set({
-      accessToken: encrypt(tokens.access_token),
-      refreshToken: tokens.refresh_token
+  const admin = getSupabaseAdmin();
+  await admin
+    .from("workspace_vercel_connections")
+    .update({
+      access_token_encrypted: encrypt(tokens.access_token),
+      refresh_token_encrypted: tokens.refresh_token
         ? encrypt(tokens.refresh_token)
-        : row.refreshToken,
-      tokenExpiresAt: newExpiresAt,
-      updatedAt: new Date(),
+        : row.refresh_token_encrypted,
+      token_expires_at: newExpiresAt.toISOString(),
+      updated_at: new Date().toISOString(),
     })
-    .where(eq(users.id, userId));
+    .eq("workspace_id", workspaceId);
 
   return toAuthInfo({
     token: tokens.access_token,
     tokenExpiresAt: newExpiresAt,
-    externalId: row.externalId,
+    externalId: row.vercel_user_external_id ?? "",
   });
 }
 
 /**
- * Get a valid Vercel access token plus CLI-relevant metadata for the given user.
- * If the token is expired, or its expiry is unknown, refreshes inline when possible.
+ * Get a valid Vercel access token for the workspace preview integration.
  */
-export async function getUserVercelAuthInfo(
-  userId: string,
+export async function getWorkspaceVercelAuthInfo(
+  workspaceId: string,
 ): Promise<UserVercelAuthInfo | null> {
   try {
-    const row = await loadUserVercelAuthRow(userId);
-    if (!row?.accessToken) {
+    const row = await loadWorkspaceVercelRow(workspaceId);
+    if (!row?.access_token_encrypted) {
       return null;
     }
 
     const now = Date.now();
-    const tokenExpiresAtMs = row.tokenExpiresAt?.getTime() ?? null;
+    const tokenExpiresAtMs = row.token_expires_at
+      ? new Date(row.token_expires_at).getTime()
+      : null;
     const isExpired = tokenExpiresAtMs !== null && tokenExpiresAtMs < now;
 
-    if (!isExpired && row.tokenExpiresAt) {
+    if (!isExpired && row.token_expires_at) {
       return toAuthInfo({
-        token: decrypt(row.accessToken),
-        tokenExpiresAt: row.tokenExpiresAt,
-        externalId: row.externalId,
+        token: decrypt(row.access_token_encrypted),
+        tokenExpiresAt: new Date(row.token_expires_at),
+        externalId: row.vercel_user_external_id ?? "",
       });
     }
 
-    return refreshUserVercelAuthInfo(userId, row);
+    return refreshWorkspaceVercelAuth(workspaceId, row);
   } catch (error) {
     console.error("Error fetching Vercel auth:", error);
     return null;
   }
 }
 
-/**
- * Get a valid Vercel access token for the given user.
- * If the token is expired and a refresh token exists, refreshes inline and updates the DB.
- */
-export async function getUserVercelToken(
-  userId: string,
+export async function getWorkspaceVercelToken(
+  workspaceId: string,
 ): Promise<string | null> {
-  const authInfo = await getUserVercelAuthInfo(userId);
+  const authInfo = await getWorkspaceVercelAuthInfo(workspaceId);
   if (authInfo) {
     return authInfo.token;
   }
 
   try {
-    const row = await loadUserVercelAuthRow(userId);
-    if (!row?.accessToken || row.tokenExpiresAt) {
+    const row = await loadWorkspaceVercelRow(workspaceId);
+    if (!row?.access_token_encrypted || row.token_expires_at) {
       return null;
     }
 
-    return decrypt(row.accessToken);
+    return decrypt(row.access_token_encrypted);
   } catch (error) {
     console.error("Error fetching Vercel token:", error);
     return null;
   }
+}
+
+/** @deprecated Use getWorkspaceVercelToken(workspaceId) */
+export async function getUserVercelToken(
+  _userId: string,
+): Promise<string | null> {
+  void _userId;
+  return null;
+}
+
+/** @deprecated Use getWorkspaceVercelAuthInfo(workspaceId) */
+export async function getUserVercelAuthInfo(
+  _userId: string,
+): Promise<UserVercelAuthInfo | null> {
+  void _userId;
+  return null;
 }

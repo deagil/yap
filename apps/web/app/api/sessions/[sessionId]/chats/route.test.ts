@@ -13,7 +13,7 @@ type AuthResult =
 type OwnedSessionResult =
   | {
       ok: true;
-      sessionRecord: { id: string };
+      sessionRecord: { id: string; workspaceId: string };
     }
   | {
       ok: false;
@@ -35,7 +35,7 @@ type ChatRecord = {
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 let ownedSessionResult: OwnedSessionResult = {
   ok: true,
-  sessionRecord: { id: "session-1" },
+  sessionRecord: { id: "session-1", workspaceId: "workspace-1" },
 };
 let currentSession: {
   authProvider?: "vercel" | "github";
@@ -56,9 +56,12 @@ let createdChat: ChatRecord = {
 const getSummaryCalls: Array<{ sessionId: string; userId: string }> = [];
 const createChatCalls: Array<{
   id: string;
+  workspaceId: string;
   sessionId: string;
   title: string;
   modelId: string;
+  activeStreamId: null;
+  lastAssistantMessageAt: null;
 }> = [];
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
@@ -82,9 +85,12 @@ mock.module("@/lib/db/sessions", () => ({
   getChatById: async () => existingChat,
   createChat: async (input: {
     id: string;
+    workspaceId: string;
     sessionId: string;
     title: string;
     modelId: string;
+    activeStreamId: null;
+    lastAssistantMessageAt: null;
   }) => {
     createChatCalls.push(input);
     return createdChat;
@@ -129,7 +135,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
     authResult = { ok: true, userId: "user-1" };
     ownedSessionResult = {
       ok: true,
-      sessionRecord: { id: "session-1" },
+      sessionRecord: { id: "session-1", workspaceId: "workspace-1" },
     };
     currentSession = { user: { id: "user-1" } };
     chatSummaries = [{ id: "chat-1", title: "Chat 1" }];
@@ -260,9 +266,12 @@ describe("/api/sessions/[sessionId]/chats", () => {
     expect(createChatCalls).toEqual([
       {
         id: "generated-chat-id",
+        workspaceId: "workspace-1",
         sessionId: "session-abc",
         title: "New chat",
         modelId: "model-default",
+        activeStreamId: null,
+        lastAssistantMessageAt: null,
       },
     ]);
     expect(body.chat.id).toBe("generated-chat-id");

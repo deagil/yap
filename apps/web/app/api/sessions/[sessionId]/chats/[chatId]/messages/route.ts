@@ -63,6 +63,7 @@ export async function POST(req: Request, context: RouteContext) {
 
   const result = await upsertChatMessageScoped({
     id: message.id,
+    workspaceId: chatContext.chat.workspaceId,
     chatId,
     role: "assistant",
     parts: message,

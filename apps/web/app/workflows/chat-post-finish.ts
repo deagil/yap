@@ -25,8 +25,11 @@ import {
 } from "@/lib/db/workflow-runs";
 import { recordUsage } from "@/lib/db/usage";
 
-const cachedInputTokensFor = (usage: LanguageModelUsage) =>
-  usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens ?? 0;
+function cachedInputTokensFor(usage: LanguageModelUsage): number {
+  return (
+    usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens ?? 0
+  );
+}
 
 type UsageByModel = {
   usage: LanguageModelUsage;
@@ -85,6 +88,7 @@ function filterNewTaskUsageEvents<T extends { toolCallId?: string }>(
 export async function persistUserMessage(
   chatId: string,
   message: WebAgentUIMessage,
+  workspaceId: string,
 ): Promise<void> {
   "use step";
 
@@ -95,6 +99,7 @@ export async function persistUserMessage(
   try {
     const created = await createChatMessageIfNotExists({
       id: message.id,
+      workspaceId,
       chatId,
       role: "user",
       parts: message,
@@ -134,6 +139,7 @@ export async function persistUserMessage(
 export async function persistAssistantMessage(
   chatId: string,
   message: WebAgentUIMessage,
+  workspaceId: string,
 ): Promise<void> {
   "use step";
 
@@ -141,6 +147,7 @@ export async function persistAssistantMessage(
     const dedupedMessage = dedupeMessageReasoning(message);
     const result = await upsertChatMessageScoped({
       id: dedupedMessage.id,
+      workspaceId,
       chatId,
       role: "assistant",
       parts: dedupedMessage,
@@ -230,6 +237,7 @@ function delay(ms: number) {
 
 export async function recordWorkflowUsage(
   userId: string,
+  workspaceId: string,
   modelId: string,
   totalUsage: LanguageModelUsage | undefined,
   responseMessage: WebAgentUIMessage,
@@ -272,7 +280,7 @@ export async function recordWorkflowUsage(
 
     // Record main agent usage
     if (totalUsage) {
-      await recordUsage(userId, {
+      await recordUsage(userId, workspaceId, {
         source: "web",
         agentType: "main",
         model: modelId,
@@ -327,7 +335,7 @@ export async function recordWorkflowUsage(
       }
 
       for (const [eventModelId, modelUsage] of subagentUsageByModel) {
-        await recordUsage(userId, {
+        await recordUsage(userId, workspaceId, {
           source: "web",
           agentType: "subagent",
           model: eventModelId,

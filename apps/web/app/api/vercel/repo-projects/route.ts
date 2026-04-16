@@ -1,7 +1,8 @@
 import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { listMatchingVercelProjects } from "@/lib/vercel/projects";
-import { getUserVercelToken } from "@/lib/vercel/token";
+import { getWorkspaceVercelToken } from "@/lib/vercel/token";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 export async function GET(req: Request) {
   const session = await getServerSession();
@@ -20,7 +21,12 @@ export async function GET(req: Request) {
     );
   }
 
-  const token = await getUserVercelToken(session.user.id);
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return Response.json({ error: "No workspace selected" }, { status: 400 });
+  }
+
+  const token = await getWorkspaceVercelToken(workspaceId);
   if (!token) {
     return Response.json(
       { error: "Connect Vercel to load matching projects" },
@@ -30,7 +36,12 @@ export async function GET(req: Request) {
 
   try {
     const [savedLink, projects] = await Promise.all([
-      getVercelProjectLinkByRepo(session.user.id, repoOwner, repoName),
+      getVercelProjectLinkByRepo(
+        session.user.id,
+        workspaceId,
+        repoOwner,
+        repoName,
+      ),
       listMatchingVercelProjects({
         token,
         repoOwner,

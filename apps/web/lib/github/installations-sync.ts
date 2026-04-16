@@ -146,6 +146,7 @@ async function fetchUserInstallations(userToken: string) {
 
 export async function syncUserInstallations(
   userId: string,
+  workspaceId: string,
   userToken: string,
   personalAccountLogin: string,
 ): Promise<number> {
@@ -156,6 +157,7 @@ export async function syncUserInstallations(
 
   for (const installation of syncableInstallations) {
     await upsertInstallation({
+      workspaceId,
       userId,
       installationId: installation.id,
       accountLogin: installation.account.login,
@@ -166,6 +168,7 @@ export async function syncUserInstallations(
   }
 
   await deleteInstallationsNotInList(
+    workspaceId,
     userId,
     syncableInstallations.map((installation) => installation.id),
   );

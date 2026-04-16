@@ -3,6 +3,7 @@ import { getInstallationByUserAndId } from "@/lib/db/installations";
 import { listUserInstallationRepositories } from "@/lib/github/installation-repos";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 function parseInstallationId(value: string | null): number | null {
   if (!value) {
@@ -43,7 +44,16 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return NextResponse.json(
+      { error: "No workspace selected" },
+      { status: 400 },
+    );
+  }
+
   const installation = await getInstallationByUserAndId(
+    workspaceId,
     session.user.id,
     installationId,
   );

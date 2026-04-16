@@ -2,7 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type { SessionChatListItem } from "@/hooks/use-session-chats";
-import type { Chat } from "@/lib/db/schema";
+import type { Chat } from "@/lib/db/types";
 
 type CreateChatResult = {
   chat: Chat;

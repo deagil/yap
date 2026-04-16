@@ -3,9 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getChatSummariesBySessionId } from "@/lib/db/sessions";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
-import { getUserPreferences } from "@/lib/db/user-preferences";
+import {
+  getUserPreferences,
+  toUserPreferencesData,
+} from "@/lib/db/user-preferences";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 import { SessionLayoutShell } from "./session-layout-shell";
 
 interface SessionLayoutProps {
@@ -36,6 +40,8 @@ export default async function SessionLayout({
     redirect("/");
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+
   let initialChatsData:
     | {
         chats: Awaited<ReturnType<typeof getChatSummariesBySessionId>>;
@@ -45,10 +51,10 @@ export default async function SessionLayout({
 
   try {
     const requestHost = (await headers()).get("host") ?? "";
-    const [chats, rawPreferences] = await Promise.all([
-      getChatSummariesBySessionId(sessionId, session.user.id),
-      getUserPreferences(session.user.id),
-    ]);
+    const chats = await getChatSummariesBySessionId(sessionId, session.user.id);
+    const rawPreferences = workspaceId
+      ? await getUserPreferences(session.user.id, workspaceId)
+      : toUserPreferencesData();
     const preferences = sanitizeUserPreferencesForSession(
       rawPreferences,
       session,

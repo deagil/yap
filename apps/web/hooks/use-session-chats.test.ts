@@ -14,6 +14,7 @@ function createChat(
   const now = new Date("2026-01-01T00:00:00.000Z");
   return {
     id,
+    workspaceId: "workspace-1",
     sessionId: "session-1",
     title: `Chat ${id}`,
     modelId: "anthropic/claude-haiku-4.5",

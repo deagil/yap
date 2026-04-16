@@ -70,6 +70,7 @@ export async function POST(req: Request, context: RouteContext) {
     throughMessageId: messageId,
     forkedChat: {
       id: requestedChatId ?? crypto.randomUUID(),
+      workspaceId: chatContext.chat.workspaceId,
       sessionId,
       title: `Fork of ${chatContext.chat.title}`,
       modelId: chatContext.chat.modelId,

@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { WebAgentUIMessage } from "@/app/types";
 
+mock.module("server-only", () => ({}));
+
+mock.module("@/lib/db/workflow-runs", () => ({
+  recordWorkflowRun: mock(() => Promise.resolve()),
+}));
+
 // ── Mutable spy state ──────────────────────────────────────────────
 
 let createChatMessageIfNotExistsResult: unknown = { id: "msg-1" };
@@ -55,6 +61,11 @@ const spies = {
 // ── Module mocks (must appear before the module-under-test import) ──
 
 mock.module("@/lib/db/sessions", () => ({
+  getSessionById: mock(async () => ({
+    id: "session-1",
+    workspaceId: "workspace-1",
+    userId: "user-1",
+  })),
   compareAndSetChatActiveStreamId: spies.compareAndSetChatActiveStreamId,
   createChatMessageIfNotExists: spies.createChatMessageIfNotExists,
   isFirstChatMessage: spies.isFirstChatMessage,
@@ -143,12 +154,12 @@ beforeEach(() => {
 
 describe("persistUserMessage", () => {
   test("skips non-user messages", async () => {
-    await persistUserMessage("chat-1", makeAssistantMessage());
+    await persistUserMessage("chat-1", makeAssistantMessage(), "workspace-1");
     expect(spies.createChatMessageIfNotExists).not.toHaveBeenCalled();
   });
 
   test("creates message and touches chat", async () => {
-    await persistUserMessage("chat-1", makeUserMessage());
+    await persistUserMessage("chat-1", makeUserMessage(), "workspace-1");
 
     expect(spies.createChatMessageIfNotExists).toHaveBeenCalledTimes(1);
     expect(spies.touchChat).toHaveBeenCalledWith("chat-1");
@@ -156,7 +167,7 @@ describe("persistUserMessage", () => {
 
   test("returns early when message already exists", async () => {
     createChatMessageIfNotExistsResult = undefined;
-    await persistUserMessage("chat-1", makeUserMessage());
+    await persistUserMessage("chat-1", makeUserMessage(), "workspace-1");
 
     expect(spies.touchChat).not.toHaveBeenCalled();
   });
@@ -167,7 +178,7 @@ describe("persistUserMessage", () => {
       parts: [{ type: "text", text: "Fix bug" }],
     });
 
-    await persistUserMessage("chat-1", msg);
+    await persistUserMessage("chat-1", msg, "workspace-1");
 
     expect(spies.updateChat).toHaveBeenCalledWith("chat-1", {
       title: "Fix bug",
@@ -181,7 +192,7 @@ describe("persistUserMessage", () => {
       parts: [{ type: "text", text: longText }],
     });
 
-    await persistUserMessage("chat-1", msg);
+    await persistUserMessage("chat-1", msg, "workspace-1");
 
     expect(spies.updateChat).toHaveBeenCalledWith("chat-1", {
       title: `${"A".repeat(80)}...`,
@@ -194,7 +205,7 @@ describe("persistUserMessage", () => {
       parts: [{ type: "tool-invocation" as unknown as "text", text: "" }],
     });
 
-    await persistUserMessage("chat-1", msg);
+    await persistUserMessage("chat-1", msg, "workspace-1");
 
     // updateChat should not be called since text extraction yields ""
     expect(spies.updateChat).not.toHaveBeenCalled();
@@ -206,7 +217,7 @@ describe("persistUserMessage", () => {
     );
 
     // Should not throw
-    await persistUserMessage("chat-1", makeUserMessage());
+    await persistUserMessage("chat-1", makeUserMessage(), "workspace-1");
   });
 });
 
@@ -216,7 +227,11 @@ describe("persistAssistantMessage", () => {
   test("upserts assistant message and updates activity on insert", async () => {
     upsertChatMessageScopedResult = { status: "inserted" };
 
-    await persistAssistantMessage("chat-1", makeAssistantMessage());
+    await persistAssistantMessage(
+      "chat-1",
+      makeAssistantMessage(),
+      "workspace-1",
+    );
 
     expect(spies.upsertChatMessageScoped).toHaveBeenCalledTimes(1);
     expect(spies.updateChatAssistantActivity).toHaveBeenCalledTimes(1);
@@ -225,7 +240,11 @@ describe("persistAssistantMessage", () => {
   test("skips activity update on conflict", async () => {
     upsertChatMessageScopedResult = { status: "conflict" };
 
-    await persistAssistantMessage("chat-1", makeAssistantMessage());
+    await persistAssistantMessage(
+      "chat-1",
+      makeAssistantMessage(),
+      "workspace-1",
+    );
 
     expect(spies.upsertChatMessageScoped).toHaveBeenCalledTimes(1);
     expect(spies.updateChatAssistantActivity).not.toHaveBeenCalled();
@@ -234,7 +253,11 @@ describe("persistAssistantMessage", () => {
   test("skips activity update on update status", async () => {
     upsertChatMessageScopedResult = { status: "updated" };
 
-    await persistAssistantMessage("chat-1", makeAssistantMessage());
+    await persistAssistantMessage(
+      "chat-1",
+      makeAssistantMessage(),
+      "workspace-1",
+    );
 
     expect(spies.updateChatAssistantActivity).not.toHaveBeenCalled();
   });
@@ -244,7 +267,11 @@ describe("persistAssistantMessage", () => {
       Promise.reject(new Error("DB down")),
     );
 
-    await persistAssistantMessage("chat-1", makeAssistantMessage());
+    await persistAssistantMessage(
+      "chat-1",
+      makeAssistantMessage(),
+      "workspace-1",
+    );
   });
 });
 

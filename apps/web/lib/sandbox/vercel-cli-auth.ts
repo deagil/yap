@@ -4,7 +4,7 @@ import {
   resolveSandboxHomeDirectory,
   shellEscape,
 } from "@/lib/sandbox/home-directory";
-import { getUserVercelAuthInfo } from "@/lib/vercel/token";
+import { getWorkspaceVercelAuthInfo } from "@/lib/vercel/token";
 
 const FILE_CLEANUP_TIMEOUT_MS = 5_000;
 const VERCEL_CLI_CONFIG_DIRECTORY = ".local/share/com.vercel.cli";
@@ -26,6 +26,7 @@ export interface VercelCliSandboxSetup {
 }
 
 interface SessionVercelCliContext {
+  workspaceId: string;
   vercelProjectId: string | null;
   vercelProjectName: string | null;
   vercelTeamId: string | null;
@@ -68,7 +69,9 @@ export async function getVercelCliSandboxSetup(params: {
   userId: string;
   sessionRecord: SessionVercelCliContext;
 }): Promise<VercelCliSandboxSetup> {
-  const authInfo = await getUserVercelAuthInfo(params.userId);
+  const authInfo = await getWorkspaceVercelAuthInfo(
+    params.sessionRecord.workspaceId,
+  );
   const orgId =
     params.sessionRecord.vercelTeamId ?? authInfo?.externalId ?? null;
 

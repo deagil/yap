@@ -12,6 +12,7 @@ interface TestVercelAuthInfo {
 let currentAuthInfo: TestVercelAuthInfo | null = null;
 
 mock.module("@/lib/vercel/token", () => ({
+  getWorkspaceVercelAuthInfo: async () => currentAuthInfo,
   getUserVercelAuthInfo: async () => currentAuthInfo,
 }));
 
@@ -88,6 +89,7 @@ describe("vercel-cli-auth", () => {
     const setup = await getVercelCliSandboxSetup({
       userId: "user-1",
       sessionRecord: {
+        workspaceId: "ws-1",
         vercelProjectId: "prj_123",
         vercelProjectName: "open-harness-web",
         vercelTeamId: "team_123",
@@ -113,6 +115,7 @@ describe("vercel-cli-auth", () => {
     const setup = await getVercelCliSandboxSetup({
       userId: "user-1",
       sessionRecord: {
+        workspaceId: "ws-1",
         vercelProjectId: "prj_123",
         vercelProjectName: null,
         vercelTeamId: null,
@@ -133,6 +136,7 @@ describe("vercel-cli-auth", () => {
     const setup = await getVercelCliSandboxSetup({
       userId: "user-1",
       sessionRecord: {
+        workspaceId: "ws-1",
         vercelProjectId: "prj_123",
         vercelProjectName: "open-harness-web",
         vercelTeamId: "team_123",
@@ -172,6 +176,7 @@ describe("vercel-cli-auth", () => {
     const setup = await getVercelCliSandboxSetup({
       userId: "user-1",
       sessionRecord: {
+        workspaceId: "ws-1",
         vercelProjectId: null,
         vercelProjectName: null,
         vercelTeamId: null,

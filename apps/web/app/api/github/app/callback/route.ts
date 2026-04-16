@@ -4,6 +4,7 @@ import { encrypt } from "@/lib/crypto";
 import { getGitHubAccount, upsertGitHubAccount } from "@/lib/db/accounts";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 interface GitHubUser {
   id: number;
@@ -149,7 +150,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const session = await getServerSession();
   if (!session?.user?.id) {
-    const signinUrl = new URL("/api/auth/signin/vercel", req.url);
+    const signinUrl = new URL("/sign-in", req.url);
     signinUrl.searchParams.set(
       "next",
       `${requestUrl.pathname}${requestUrl.search}`,
@@ -206,10 +207,13 @@ export async function GET(req: Request): Promise<Response> {
     (await getGitHubAccount(session.user.id))?.username ??
     null;
 
-  if (resolvedToken && personalAccountLogin) {
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+
+  if (resolvedToken && personalAccountLogin && workspaceId) {
     try {
       syncedInstallationsCount = await syncUserInstallations(
         session.user.id,
+        workspaceId,
         resolvedToken,
         personalAccountLogin,
       );

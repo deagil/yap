@@ -1,71 +1,77 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 type UpsertMode = "inserted" | "updated" | "conflict";
 
 let upsertMode: UpsertMode = "inserted";
 
-// Rows returned by the fakeDb select() chain (used by getUsedSessionTitles)
 let fakeSelectRows: { title: string }[] = [];
 
-const fakeInsertedMessage = {
+const fakeDbMessageRow = {
   id: "message-1",
-  chatId: "chat-1",
-  role: "assistant" as const,
+  workspace_id: "workspace-1",
+  chat_id: "chat-1",
+  role: "assistant",
   parts: { id: "message-1", role: "assistant", parts: [] },
-  createdAt: new Date(),
+  created_at: new Date("2026-01-01T00:00:00.000Z").toISOString(),
 };
 
-const fakeDb = {
-  // Fluent select chain: db.select({…}).from(table).where(condition)
-  select: (_columns: unknown) => ({
-    from: (_table: unknown) => ({
-      where: async (_condition: unknown) => fakeSelectRows,
-    }),
-  }),
-
-  transaction: async <T>(
-    callback: (tx: {
-      insert: (table: unknown) => {
-        values: (input: unknown) => {
-          onConflictDoNothing: (config: unknown) => {
-            returning: () => Promise<(typeof fakeInsertedMessage)[]>;
-          };
-        };
-      };
-      update: (table: unknown) => {
-        set: (input: unknown) => {
-          where: (condition: unknown) => {
-            returning: () => Promise<(typeof fakeInsertedMessage)[]>;
-          };
-        };
-      };
-    }) => Promise<T>,
-  ) => {
-    const tx = {
-      insert: (_table: unknown) => ({
-        values: (_input: unknown) => ({
-          onConflictDoNothing: (_config: unknown) => ({
-            returning: async () =>
-              upsertMode === "inserted" ? [fakeInsertedMessage] : [],
+function fakeSupabase() {
+  return {
+    from(table: string) {
+      if (table === "sessions") {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: async () => ({
+                data: fakeSelectRows,
+                error: null,
+              }),
+            }),
           }),
-        }),
-      }),
-      update: (_table: unknown) => ({
-        set: (_input: unknown) => ({
-          where: (_condition: unknown) => ({
-            returning: async () =>
-              upsertMode === "updated" ? [fakeInsertedMessage] : [],
+        };
+      }
+      if (table === "chat_messages") {
+        return {
+          insert: () => ({
+            select: () => ({
+              maybeSingle: async () => {
+                if (upsertMode === "inserted") {
+                  return { data: { ...fakeDbMessageRow }, error: null };
+                }
+                return {
+                  data: null,
+                  error: { code: "23505", message: "duplicate" },
+                };
+              },
+            }),
           }),
-        }),
-      }),
-    };
+          update: () => ({
+            eq: () => ({
+              eq: () => ({
+                eq: () => ({
+                  select: () => ({
+                    maybeSingle: async () => {
+                      if (upsertMode === "updated") {
+                        return { data: { ...fakeDbMessageRow }, error: null };
+                      }
+                      return { data: null, error: null };
+                    },
+                  }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      throw new Error(`unexpected table: ${table}`);
+    },
+  };
+}
 
-    return callback(tx);
-  },
-};
-
-mock.module("./client", () => ({
-  db: fakeDb,
+mock.module("@/lib/supabase/server", () => ({
+  createServerSupabase: async () => fakeSupabase(),
 }));
 
 const sessionsModulePromise = import("./sessions");
@@ -127,7 +133,7 @@ describe("getUsedSessionTitles", () => {
     const { getUsedSessionTitles } = await sessionsModulePromise;
     fakeSelectRows = [];
 
-    const result = await getUsedSessionTitles("user-1");
+    const result = await getUsedSessionTitles("user-1", "workspace-1");
     expect(result).toBeInstanceOf(Set);
     expect(result.size).toBe(0);
   });
@@ -140,7 +146,7 @@ describe("getUsedSessionTitles", () => {
       { title: "Lagos" },
     ];
 
-    const result = await getUsedSessionTitles("user-1");
+    const result = await getUsedSessionTitles("user-1", "workspace-1");
     expect(result.size).toBe(3);
     expect(result.has("Tokyo")).toBe(true);
     expect(result.has("Paris")).toBe(true);
@@ -151,7 +157,7 @@ describe("getUsedSessionTitles", () => {
     const { getUsedSessionTitles } = await sessionsModulePromise;
     fakeSelectRows = [{ title: "Rome" }, { title: "Rome" }];
 
-    const result = await getUsedSessionTitles("user-1");
+    const result = await getUsedSessionTitles("user-1", "workspace-1");
     expect(result.size).toBe(1);
     expect(result.has("Rome")).toBe(true);
   });
@@ -168,6 +174,7 @@ describe("upsertChatMessageScoped", () => {
 
     const result = await upsertChatMessageScoped({
       id: "message-1",
+      workspaceId: "workspace-1",
       chatId: "chat-1",
       role: "assistant",
       parts: { id: "message-1", role: "assistant", parts: [] },
@@ -182,6 +189,7 @@ describe("upsertChatMessageScoped", () => {
 
     const result = await upsertChatMessageScoped({
       id: "message-1",
+      workspaceId: "workspace-1",
       chatId: "chat-1",
       role: "assistant",
       parts: { id: "message-1", role: "assistant", parts: [{ type: "text" }] },
@@ -196,6 +204,7 @@ describe("upsertChatMessageScoped", () => {
 
     const result = await upsertChatMessageScoped({
       id: "message-1",
+      workspaceId: "workspace-1",
       chatId: "chat-1",
       role: "assistant",
       parts: { id: "message-1", role: "assistant", parts: [{ type: "text" }] },

@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
-import type { Chat, Session } from "@/lib/db/schema";
+import type { Chat, Session } from "@/lib/db/types";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 import { fetcher } from "@/lib/swr";
 

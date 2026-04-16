@@ -20,6 +20,7 @@ import {
   MANAGED_TEMPLATE_TRIAL_MODEL_ACCESS_ERROR,
 } from "@/lib/model-access";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 const PROVIDER_OPTIONS_MAX_BYTES = 16 * 1024;
 
@@ -48,7 +49,12 @@ export async function GET(req: Request) {
     return jsonError("Not authenticated", 401);
   }
 
-  const preferences = await getUserPreferences(session.user.id);
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return jsonError("No workspace selected", 400);
+  }
+
+  const preferences = await getUserPreferences(session.user.id, workspaceId);
   return Response.json({
     modelVariants: filterModelVariantsForSession(
       getAllVariants(preferences.modelVariants),
@@ -62,6 +68,11 @@ export async function POST(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return jsonError("Not authenticated", 401);
+  }
+
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return jsonError("No workspace selected", 400);
   }
 
   let body: unknown;
@@ -90,15 +101,19 @@ export async function POST(req: Request) {
     // NOTE: This read-modify-write flow can drop concurrent updates (e.g. multiple tabs).
     // It's acceptable for now, but should be hardened later with optimistic concurrency
     // or an atomic database update.
-    const preferences = await getUserPreferences(session.user.id);
+    const preferences = await getUserPreferences(session.user.id, workspaceId);
     const nextVariant: ModelVariant = modelVariantSchema.parse({
       id: `${MODEL_VARIANT_ID_PREFIX}${nanoid()}`,
       ...parsedBody.data,
     });
 
-    const updatedPreferences = await updateUserPreferences(session.user.id, {
-      modelVariants: [...preferences.modelVariants, nextVariant],
-    });
+    const updatedPreferences = await updateUserPreferences(
+      session.user.id,
+      workspaceId,
+      {
+        modelVariants: [...preferences.modelVariants, nextVariant],
+      },
+    );
 
     return Response.json({
       modelVariants: filterModelVariantsForSession(
@@ -117,6 +132,11 @@ export async function PATCH(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return jsonError("Not authenticated", 401);
+  }
+
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return jsonError("No workspace selected", 400);
   }
 
   let body: unknown;
@@ -143,7 +163,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const preferences = await getUserPreferences(session.user.id);
+    const preferences = await getUserPreferences(session.user.id, workspaceId);
     const variantIndex = preferences.modelVariants.findIndex(
       (variant) => variant.id === parsedBody.data.id,
     );
@@ -169,9 +189,13 @@ export async function PATCH(req: Request) {
     const nextVariants = [...preferences.modelVariants];
     nextVariants[variantIndex] = updatedVariant;
 
-    const updatedPreferences = await updateUserPreferences(session.user.id, {
-      modelVariants: nextVariants,
-    });
+    const updatedPreferences = await updateUserPreferences(
+      session.user.id,
+      workspaceId,
+      {
+        modelVariants: nextVariants,
+      },
+    );
 
     return Response.json({
       modelVariants: filterModelVariantsForSession(
@@ -192,6 +216,11 @@ export async function DELETE(req: Request) {
     return jsonError("Not authenticated", 401);
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return jsonError("No workspace selected", 400);
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -209,7 +238,7 @@ export async function DELETE(req: Request) {
   }
 
   try {
-    const preferences = await getUserPreferences(session.user.id);
+    const preferences = await getUserPreferences(session.user.id, workspaceId);
     const nextVariants = preferences.modelVariants.filter(
       (variant) => variant.id !== parsedBody.data.id,
     );
@@ -218,9 +247,13 @@ export async function DELETE(req: Request) {
       return jsonError("Model variant not found", 404);
     }
 
-    const updatedPreferences = await updateUserPreferences(session.user.id, {
-      modelVariants: nextVariants,
-    });
+    const updatedPreferences = await updateUserPreferences(
+      session.user.id,
+      workspaceId,
+      {
+        modelVariants: nextVariants,
+      },
+    );
 
     return Response.json({
       modelVariants: filterModelVariantsForSession(

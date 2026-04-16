@@ -1,8 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 
-mock.module("./client", () => ({
-  db: {},
-}));
+mock.module("server-only", () => ({}));
 
 const userPreferencesModulePromise = import("./user-preferences");
 
@@ -30,18 +28,18 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: "openai/gpt-5-mini",
-      defaultSandboxType: "invalid" as never,
-      defaultDiffMode: "invalid" as never,
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [],
-      enabledModelIds: [],
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: "openai/gpt-5-mini",
+      default_sandbox_type: "invalid",
+      default_diff_mode: "invalid",
+      auto_commit_push: false,
+      auto_create_pr: false,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: false,
+      global_skill_refs: [],
+      model_variants: [],
+      enabled_model_ids: [],
     });
 
     expect(result.defaultSandboxType).toBe("vercel");
@@ -52,18 +50,18 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "hybrid" as never,
-      defaultDiffMode: "unified",
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [],
-      enabledModelIds: [],
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: null,
+      default_sandbox_type: "hybrid",
+      default_diff_mode: "unified",
+      auto_commit_push: false,
+      auto_create_pr: false,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: false,
+      global_skill_refs: [],
+      model_variants: [],
+      enabled_model_ids: [],
     });
 
     expect(result.defaultSandboxType).toBe("vercel");
@@ -74,20 +72,18 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [
-        { source: "vercel/ai", skillName: "bad name" },
-      ] as never,
-      modelVariants: [],
-      enabledModelIds: [],
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: null,
+      default_sandbox_type: "vercel",
+      default_diff_mode: "split",
+      auto_commit_push: false,
+      auto_create_pr: false,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: false,
+      global_skill_refs: [{ source: "vercel/ai", skillName: "bad name" }],
+      model_variants: [],
+      enabled_model_ids: [],
     });
 
     expect(result.globalSkillRefs).toEqual([]);
@@ -97,21 +93,21 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: null,
+      default_sandbox_type: "vercel",
+      default_diff_mode: "split",
+      auto_commit_push: false,
+      auto_create_pr: false,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: false,
+      global_skill_refs: [
         { source: "vercel/ai", skillName: "ai-sdk" },
         { source: "vercel/ai", skillName: "ai-sdk" },
       ],
-      modelVariants: [],
-      enabledModelIds: [],
+      model_variants: [],
+      enabled_model_ids: [],
     });
 
     expect(result.globalSkillRefs).toEqual([
@@ -123,18 +119,18 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [{ id: "bad-id" }] as never,
-      enabledModelIds: [],
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: null,
+      default_sandbox_type: "vercel",
+      default_diff_mode: "split",
+      auto_commit_push: false,
+      auto_create_pr: false,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: false,
+      global_skill_refs: [],
+      model_variants: [{ id: "bad-id" }],
+      enabled_model_ids: [],
     });
 
     expect(result.modelVariants).toEqual([]);
@@ -144,17 +140,17 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: true,
-      autoCreatePr: true,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: false,
-      globalSkillRefs: [],
-      modelVariants: [
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: null,
+      default_sandbox_type: "vercel",
+      default_diff_mode: "split",
+      auto_commit_push: true,
+      auto_create_pr: true,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: false,
+      global_skill_refs: [],
+      model_variants: [
         {
           id: "variant:test",
           name: "Test Variant",
@@ -162,7 +158,7 @@ describe("toUserPreferencesData", () => {
           providerOptions: { reasoningEffort: "low" },
         },
       ],
-      enabledModelIds: [],
+      enabled_model_ids: [],
     });
 
     expect(result).toEqual({
@@ -192,18 +188,18 @@ describe("toUserPreferencesData", () => {
     const { toUserPreferencesData } = await userPreferencesModulePromise;
 
     const result = toUserPreferencesData({
-      defaultModelId: "openai/gpt-5",
-      defaultSubagentModelId: null,
-      defaultSandboxType: "vercel",
-      defaultDiffMode: "split",
-      autoCommitPush: false,
-      autoCreatePr: false,
-      alertsEnabled: true,
-      alertSoundEnabled: true,
-      publicUsageEnabled: true,
-      globalSkillRefs: [],
-      modelVariants: [],
-      enabledModelIds: [],
+      default_model_id: "openai/gpt-5",
+      default_subagent_model_id: null,
+      default_sandbox_type: "vercel",
+      default_diff_mode: "split",
+      auto_commit_push: false,
+      auto_create_pr: false,
+      alerts_enabled: true,
+      alert_sound_enabled: true,
+      public_usage_enabled: true,
+      global_skill_refs: [],
+      model_variants: [],
+      enabled_model_ids: [],
     });
 
     expect(result.publicUsageEnabled).toBe(true);

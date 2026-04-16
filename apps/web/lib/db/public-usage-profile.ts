@@ -1,14 +1,12 @@
 import { cache } from "react";
-import { eq, sql } from "drizzle-orm";
 import type { UsageInsights, UsageRepositoryInsight } from "@/lib/usage/types";
 import {
   parsePublicUsageDate,
   type PublicUsageDateSelection,
 } from "@/lib/usage/date-range";
-import { db } from "./client";
-import { userPreferences, users } from "./schema";
-import { getUsageInsights } from "./usage-insights";
-import { getUsageHistory, type DailyUsage } from "./usage";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getUsageInsightsAllWorkspaces } from "./usage-insights";
+import { getUsageHistoryAllWorkspaces, type DailyUsage } from "./usage";
 
 export interface PublicUsageModelSummary {
   modelId: string;
@@ -195,7 +193,7 @@ interface PublicUsageUserCandidate {
   username: string;
   name: string | null;
   avatarUrl: string | null;
-  lastLoginAt: Date | null;
+  updatedAt: Date | null;
   publicUsageEnabled: boolean | null;
 }
 
@@ -219,10 +217,10 @@ function pickPublicUsageUserCandidate(
       return exactMatchDifference;
     }
 
-    const lastLoginDifference =
-      (b.lastLoginAt?.getTime() ?? 0) - (a.lastLoginAt?.getTime() ?? 0);
-    if (lastLoginDifference !== 0) {
-      return lastLoginDifference;
+    const updatedDifference =
+      (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0);
+    if (updatedDifference !== 0) {
+      return updatedDifference;
     }
 
     return a.id.localeCompare(b.id);
@@ -244,20 +242,36 @@ export const getPublicUsageProfile = cache(
     dateValue: string | null,
   ): Promise<PublicUsageProfile | null> => {
     const normalizedUsername = username.trim().toLowerCase();
-    const userCandidates = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        name: users.name,
-        avatarUrl: users.avatarUrl,
-        lastLoginAt: users.lastLoginAt,
-        publicUsageEnabled: userPreferences.publicUsageEnabled,
-      })
-      .from(users)
-      .leftJoin(userPreferences, eq(userPreferences.userId, users.id))
-      .where(sql`lower(${users.username}) = ${normalizedUsername}`)
-      .limit(10);
-    const user = pickPublicUsageUserCandidate(userCandidates, username);
+    const admin = getSupabaseAdmin();
+    const { data: userRows, error: uErr } = await admin
+      .from("users")
+      .select("id, username, name, avatar_url, updated_at")
+      .ilike("username", normalizedUsername);
+    if (uErr) {
+      throw uErr;
+    }
+
+    const candidates: PublicUsageUserCandidate[] = [];
+    for (const row of userRows ?? []) {
+      const uid = row.id as string;
+      const { data: prefs } = await admin
+        .from("user_preferences")
+        .select("public_usage_enabled")
+        .eq("user_id", uid)
+        .eq("public_usage_enabled", true)
+        .limit(1);
+      const enabled = (prefs?.length ?? 0) > 0;
+      candidates.push({
+        id: uid,
+        username: row.username as string,
+        name: (row.name as string | null) ?? null,
+        avatarUrl: (row.avatar_url as string | null) ?? null,
+        updatedAt: row.updated_at ? new Date(row.updated_at as string) : null,
+        publicUsageEnabled: enabled,
+      });
+    }
+
+    const user = pickPublicUsageUserCandidate(candidates, username);
 
     if (!user) {
       return null;
@@ -272,8 +286,8 @@ export const getPublicUsageProfile = cache(
       : { allTime: true };
 
     const [usage, insights] = await Promise.all([
-      getUsageHistory(user.id, queryOptions),
-      getUsageInsights(user.id, queryOptions),
+      getUsageHistoryAllWorkspaces(user.id, queryOptions),
+      getUsageInsightsAllWorkspaces(user.id, queryOptions),
     ]);
     const derived = buildPublicUsageProfileData({ usage, insights });
 

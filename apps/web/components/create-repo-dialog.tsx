@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import type { Session } from "@/lib/db/schema";
+import type { Session } from "@/lib/db/types";
 import { buildGitHubReconnectUrl } from "@/lib/github/connection-status";
 
 interface CreateRepoDialogProps {

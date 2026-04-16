@@ -24,8 +24,12 @@ mock.module("@/lib/db/accounts", () => ({
   getGitHubAccount: async () => githubAccount,
 }));
 
+mock.module("@/lib/workspace/context", () => ({
+  getActiveWorkspaceIdForUser: async () => "workspace-1",
+}));
+
 mock.module("@/lib/db/installations", () => ({
-  getInstallationsByUserId: async () => installations,
+  getInstallationsForWorkspace: async () => installations,
 }));
 
 mock.module("@/lib/github/user-token", () => ({

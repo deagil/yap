@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { Session } from "@/lib/db/schema";
+import type { Session } from "@/lib/db/types";
 import {
   createSessionBranch,
   fetchRepoBranches,

@@ -41,7 +41,11 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const body: unknown = await request.json().catch(() => null);
     if (isStopRequestWithMessage(body)) {
-      await persistAssistantSnapshot(chatId, body.assistantMessage);
+      await persistAssistantSnapshot(
+        chatId,
+        chat.workspaceId,
+        body.assistantMessage,
+      );
     }
   } catch {
     // Best-effort — don't block cancellation if persistence fails.
@@ -80,6 +84,7 @@ export async function POST(request: Request, context: RouteContext) {
 
 async function persistAssistantSnapshot(
   chatId: string,
+  workspaceId: string,
   message: WebAgentUIMessage,
 ): Promise<void> {
   // Insert-only: if the workflow already persisted a fuller message, this
@@ -87,6 +92,7 @@ async function persistAssistantSnapshot(
   // (throttled) client snapshot.
   const created = await createChatMessageIfNotExists({
     id: message.id,
+    workspaceId,
     chatId,
     role: "assistant",
     parts: message,

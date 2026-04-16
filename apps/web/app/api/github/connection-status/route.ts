@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { getInstallationsByUserId } from "@/lib/db/installations";
+import { getInstallationsForWorkspace } from "@/lib/db/installations";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/connection-status";
 import {
   isGitHubInstallationsAuthError,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/github/installations-sync";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 export async function GET() {
   const session = await getServerSession();
@@ -16,9 +17,14 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return NextResponse.json({ error: "No workspace" }, { status: 400 });
+  }
+
   const [ghAccount, installations] = await Promise.all([
     getGitHubAccount(session.user.id),
-    getInstallationsByUserId(session.user.id),
+    getInstallationsForWorkspace(workspaceId, session.user.id),
   ]);
 
   if (!ghAccount) {
@@ -43,6 +49,7 @@ export async function GET() {
   try {
     const syncedInstallationsCount = await syncUserInstallations(
       session.user.id,
+      workspaceId,
       token,
       ghAccount.username,
     );

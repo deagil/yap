@@ -1,10 +1,11 @@
 import { generateState } from "arctic";
 import { NextResponse, type NextRequest } from "next/server";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { getInstallationsByUserId } from "@/lib/db/installations";
+import { getInstallationsForWorkspace } from "@/lib/db/installations";
 import { decrypt } from "@/lib/crypto";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 function sanitizeRedirectTo(rawRedirectTo: string | null): string {
   if (!rawRedirectTo) {
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const redirectTo = sanitizeRedirectTo(req.nextUrl.searchParams.get("next"));
 
   if (!session?.user?.id) {
-    const signinUrl = new URL("/api/auth/signin/vercel", req.url);
+    const signinUrl = new URL("/sign-in", req.url);
     signinUrl.searchParams.set(
       "next",
       `${req.nextUrl.pathname}${req.nextUrl.search}`,
@@ -107,9 +108,16 @@ export async function GET(req: NextRequest): Promise<Response> {
     return redirectWithInstallCookies(selectTargetUrl, redirectTo, state);
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    const fallbackUrl = new URL(redirectTo, req.url);
+    fallbackUrl.searchParams.set("github", "no_workspace");
+    return NextResponse.redirect(fallbackUrl);
+  }
+
   const ghAccount = await getGitHubAccount(session.user.id);
   let installations = ghAccount
-    ? await getInstallationsByUserId(session.user.id)
+    ? await getInstallationsForWorkspace(workspaceId, session.user.id)
     : [];
 
   if (ghAccount) {
@@ -118,10 +126,14 @@ export async function GET(req: NextRequest): Promise<Response> {
         const userToken = decrypt(ghAccount.accessToken);
         await syncUserInstallations(
           session.user.id,
+          workspaceId,
           userToken,
           ghAccount.username,
         );
-        installations = await getInstallationsByUserId(session.user.id);
+        installations = await getInstallationsForWorkspace(
+          workspaceId,
+          session.user.id,
+        );
       } catch (error) {
         console.error("Failed to sync GitHub installations in install flow:", {
           userId: session.user.id,

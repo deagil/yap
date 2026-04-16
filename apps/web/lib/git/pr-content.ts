@@ -1,13 +1,11 @@
 import type { Sandbox } from "@open-harness/sandbox";
 import { gateway } from "@open-harness/agent";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getConversationContext } from "@/app/api/generate-pr/_lib/generate-pr-helpers";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { db } from "@/lib/db/client";
 import { getChatsBySessionId, getSessionById } from "@/lib/db/sessions";
-import { users } from "@/lib/db/schema";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 const prContentSchema = z.object({
   title: z
@@ -93,13 +91,15 @@ export async function resolvePullRequestContextSection(params: {
 
   if (sessionRecord) {
     const [userRecord, githubAccount] = await Promise.all([
-      db.query.users.findFirst({
-        where: eq(users.id, sessionRecord.userId),
-        columns: {
-          name: true,
-          username: true,
-        },
-      }),
+      (async () => {
+        const supabase = await createServerSupabase();
+        const { data } = await supabase
+          .from("users")
+          .select("name, username")
+          .eq("id", sessionRecord.userId)
+          .maybeSingle();
+        return data;
+      })(),
       getGitHubAccount(sessionRecord.userId),
     ]);
     const githubUsername = githubAccount?.username?.trim() || null;

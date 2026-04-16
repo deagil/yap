@@ -66,6 +66,7 @@ export async function POST(_req: Request, context: RouteContext) {
 
   const createdShare = await createShareIfNotExists({
     id: nanoid(12),
+    workspaceId: chatContext.chat.workspaceId,
     chatId,
   });
 

@@ -26,7 +26,7 @@ import { ThinkingBlock } from "@/components/thinking-block";
 import { ToolCall } from "@/components/tool-call";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import type { Chat } from "@/lib/db/schema";
+import type { Chat } from "@/lib/db/types";
 import { streamdownPlugins } from "@/lib/streamdown-config";
 import { cn } from "@/lib/utils";
 import { SharedChatStatus } from "./shared-chat-status";

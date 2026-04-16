@@ -12,6 +12,7 @@ import {
   useTransition,
 } from "react";
 import { InboxSidebar } from "@/components/inbox-sidebar";
+import type { WorkspaceSummary } from "@/components/workspace/workspace-switcher";
 import { NewSessionDialog } from "@/components/new-session-dialog";
 import {
   Sidebar,
@@ -34,6 +35,10 @@ type SessionsRouteShellProps = {
     archivedCount: number;
   };
   lastRepo: { owner: string; repo: string } | null;
+  workspaceSwitcher: {
+    activeWorkspaceId: string;
+    workspaces: WorkspaceSummary[];
+  };
 };
 
 const RouteContentShell = memo(function RouteContentShell({
@@ -53,6 +58,7 @@ export function SessionsRouteShell({
   currentUser,
   initialSessionsData,
   lastRepo,
+  workspaceSwitcher,
 }: SessionsRouteShellProps) {
   const router = useRouter();
   const params = useParams<{ sessionId?: string }>();
@@ -274,6 +280,7 @@ export function SessionsRouteShell({
               onCreateSessionForRepo={handleCreateSessionForRepo}
               onCreateSessionFromBranch={handleCreateSessionFromBranch}
               initialUser={currentUser}
+              workspaceSwitcher={workspaceSwitcher}
             />
           </SidebarContent>
         </Sidebar>

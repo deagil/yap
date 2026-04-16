@@ -19,6 +19,7 @@ interface TestSessionRecord {
 }
 
 interface TestChatRecord {
+  workspaceId: string;
   sessionId: string;
   modelId: string | null;
   activeStreamId: string | null;
@@ -286,6 +287,7 @@ describe("/api/chat route", () => {
     };
 
     chatRecord = {
+      workspaceId: "workspace-1",
       sessionId: "session-1",
       modelId: null,
       activeStreamId: null,
@@ -622,6 +624,7 @@ describe("/api/chat route", () => {
     expect(persistAssistantMessagesWithToolResultsSpy).toHaveBeenCalledTimes(1);
     expect(persistAssistantMessagesWithToolResultsSpy).toHaveBeenCalledWith(
       "chat-1",
+      "workspace-1",
       expect.any(Array),
     );
   });

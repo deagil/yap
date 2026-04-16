@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 let sessionRecord: { userId: string } | null = null;
 let chats: Array<{ id: string }> = [];
 let userRecord: { name: string | null; username: string | null } | null = null;
@@ -44,14 +46,24 @@ mock.module("@/lib/db/accounts", () => ({
   getGitHubAccount: async () => githubAccount,
 }));
 
-mock.module("@/lib/db/client", () => ({
-  db: {
-    query: {
-      users: {
-        findFirst: async () => userRecord,
-      },
+mock.module("@/lib/supabase/server", () => ({
+  createServerSupabase: async () => ({
+    from(table: string) {
+      if (table === "users") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: userRecord,
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      throw new Error(`unexpected Supabase table: ${table}`);
     },
-  },
+  }),
 }));
 
 const prContentModulePromise = import("./pr-content");

@@ -46,6 +46,11 @@ const spies = {
 };
 
 mock.module("@/lib/db/sessions", () => ({
+  getSessionById: mock(async () => ({
+    id: "session-1",
+    workspaceId: "workspace-1",
+    userId: "user-1",
+  })),
   compareAndSetChatActiveStreamId: mock(() => Promise.resolve(true)),
   createChatMessageIfNotExists: mock(() => Promise.resolve(undefined)),
   touchChat: mock(() => Promise.resolve()),
@@ -89,12 +94,19 @@ describe("recordWorkflowUsage", () => {
       cachedInputTokens: 10,
     });
 
-    await recordWorkflowUsage("user-1", "gpt-4", usage, makeAssistantMessage());
+    await recordWorkflowUsage(
+      "user-1",
+      "workspace-1",
+      "gpt-4",
+      usage,
+      makeAssistantMessage(),
+    );
 
     expect(spies.recordUsage).toHaveBeenCalledTimes(1);
     const calls = spies.recordUsage.mock.calls as unknown[][];
     expect(calls[0][0]).toBe("user-1");
-    expect(calls[0][1]).toMatchObject({
+    expect(calls[0][1]).toBe("workspace-1");
+    expect(calls[0][2]).toMatchObject({
       source: "web",
       agentType: "main",
       model: "gpt-4",
@@ -104,6 +116,7 @@ describe("recordWorkflowUsage", () => {
   test("records workflow run timing when provided", async () => {
     await recordWorkflowUsage(
       "user-1",
+      "workspace-1",
       "gpt-4",
       undefined,
       makeAssistantMessage(),
@@ -167,6 +180,7 @@ describe("recordWorkflowUsage", () => {
 
     await recordWorkflowUsage(
       "user-1",
+      "workspace-1",
       "gpt-4",
       usage,
       makeAssistantMessage(),
@@ -185,7 +199,7 @@ describe("recordWorkflowUsage", () => {
 
     expect(spies.recordWorkflowRun).toHaveBeenCalledTimes(1);
     expect(spies.recordUsage).toHaveBeenCalledTimes(1);
-    expect((spies.recordUsage.mock.calls as unknown[][])[0][1]).toMatchObject({
+    expect((spies.recordUsage.mock.calls as unknown[][])[0][2]).toMatchObject({
       agentType: "main",
       model: "gpt-4",
     });
@@ -194,6 +208,7 @@ describe("recordWorkflowUsage", () => {
   test("skips main recording when totalUsage is undefined", async () => {
     await recordWorkflowUsage(
       "user-1",
+      "workspace-1",
       "gpt-4",
       undefined,
       makeAssistantMessage(),
@@ -236,34 +251,40 @@ describe("recordWorkflowUsage", () => {
       totalTokens: 150,
     });
 
-    await recordWorkflowUsage("user-1", "gpt-4", usage, makeAssistantMessage());
+    await recordWorkflowUsage(
+      "user-1",
+      "workspace-1",
+      "gpt-4",
+      usage,
+      makeAssistantMessage(),
+    );
 
     expect(spies.recordUsage).toHaveBeenCalledTimes(3);
 
     const calls = spies.recordUsage.mock.calls as unknown[][];
     const subCalls = calls.filter(
-      (c) => (c[1] as { agentType: string }).agentType === "subagent",
+      (c) => (c[2] as { agentType: string }).agentType === "subagent",
     );
     expect(subCalls).toHaveLength(2);
 
-    const models = subCalls.map((c) => (c[1] as { model: string }).model);
+    const models = subCalls.map((c) => (c[2] as { model: string }).model);
     expect(models.toSorted()).toEqual(["claude-3", "gpt-4"]);
 
     const claudeCall = subCalls.find(
-      (c) => (c[1] as { model: string }).model === "claude-3",
+      (c) => (c[2] as { model: string }).model === "claude-3",
     );
     const gptCall = subCalls.find(
-      (c) => (c[1] as { model: string }).model === "gpt-4",
+      (c) => (c[2] as { model: string }).model === "gpt-4",
     );
 
-    expect(claudeCall?.[1]).toMatchObject({
+    expect(claudeCall?.[2]).toMatchObject({
       toolCallCount: 2,
       usage: {
         inputTokens: 30,
         outputTokens: 15,
       },
     });
-    expect(gptCall?.[1]).toMatchObject({
+    expect(gptCall?.[2]).toMatchObject({
       toolCallCount: 1,
       usage: {
         inputTokens: 30,
@@ -303,6 +324,7 @@ describe("recordWorkflowUsage", () => {
 
     await recordWorkflowUsage(
       "user-1",
+      "workspace-1",
       "gpt-4",
       undefined,
       responseMessage,
@@ -311,7 +333,7 @@ describe("recordWorkflowUsage", () => {
 
     expect(spies.recordUsage).toHaveBeenCalledTimes(1);
     const calls = spies.recordUsage.mock.calls as unknown[][];
-    expect(calls[0][1]).toMatchObject({
+    expect(calls[0][2]).toMatchObject({
       source: "web",
       agentType: "subagent",
       model: "claude-3",
@@ -333,6 +355,7 @@ describe("recordWorkflowUsage", () => {
 
     await recordWorkflowUsage(
       "user-1",
+      "workspace-1",
       "gpt-4",
       undefined,
       makeAssistantMessage(),
@@ -340,7 +363,7 @@ describe("recordWorkflowUsage", () => {
 
     expect(spies.recordUsage).toHaveBeenCalledTimes(1);
     const calls = spies.recordUsage.mock.calls as unknown[][];
-    expect((calls[0][1] as { model: string }).model).toBe("gpt-4");
+    expect((calls[0][2] as { model: string }).model).toBe("gpt-4");
   });
 
   test("does not throw on error", async () => {
@@ -354,6 +377,12 @@ describe("recordWorkflowUsage", () => {
       totalTokens: 2,
     });
 
-    await recordWorkflowUsage("user-1", "gpt-4", usage, makeAssistantMessage());
+    await recordWorkflowUsage(
+      "user-1",
+      "workspace-1",
+      "gpt-4",
+      usage,
+      makeAssistantMessage(),
+    );
   });
 });

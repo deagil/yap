@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
 import type { WebAgentUIMessage } from "@/app/types";
-import { db } from "@/lib/db/client";
-import { users } from "@/lib/db/schema";
 import { getChatById, getChatMessages } from "@/lib/db/sessions";
 import {
   getSessionByIdCached,
@@ -12,6 +9,7 @@ import {
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { getAllVariants, MODEL_VARIANT_ID_PREFIX } from "@/lib/model-variants";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { redactSharedEnvContent } from "./redact-shared-env-content";
 import { SharedChatContent } from "./shared-chat-content";
 import type { MessageWithTiming } from "./shared-chat-content";
@@ -22,6 +20,7 @@ interface SharedPageProps {
 
 async function resolveSharedModelName(
   userId: string,
+  workspaceId: string,
   modelId: string | null | undefined,
 ): Promise<string | null> {
   if (!modelId || !modelId.startsWith(MODEL_VARIANT_ID_PREFIX)) {
@@ -29,7 +28,8 @@ async function resolveSharedModelName(
   }
 
   try {
-    const preferences = await getUserPreferences(userId);
+    const admin = getSupabaseAdmin();
+    const preferences = await getUserPreferences(userId, workspaceId, admin);
     const variant = getAllVariants(preferences.modelVariants).find(
       (item) => item.id === modelId,
     );
@@ -46,7 +46,8 @@ export async function generateMetadata({
 }: SharedPageProps): Promise<Metadata> {
   const { shareId } = await params;
   const share = await getShareByIdCached(shareId);
-  const sharedChat = share ? await getChatById(share.chatId) : null;
+  const admin = getSupabaseAdmin();
+  const sharedChat = share ? await getChatById(share.chatId, admin) : null;
 
   return {
     title: sharedChat?.title ?? "Shared Chat",
@@ -58,6 +59,7 @@ export default async function SharedPage({ params }: SharedPageProps) {
   const { shareId } = await params;
 
   const viewerSessionPromise = getServerSession();
+  const admin = getSupabaseAdmin();
   const sharePromise = getShareByIdCached(shareId);
 
   const [viewerSession, share] = await Promise.all([
@@ -68,7 +70,7 @@ export default async function SharedPage({ params }: SharedPageProps) {
     notFound();
   }
 
-  const sharedChat = await getChatById(share.chatId);
+  const sharedChat = await getChatById(share.chatId, admin);
   if (!sharedChat) {
     notFound();
   }
@@ -79,16 +81,13 @@ export default async function SharedPage({ params }: SharedPageProps) {
   }
 
   // Fetch the user who owns this session (public profile info only)
-  const sessionUser = await db.query.users.findFirst({
-    where: eq(users.id, session.userId),
-    columns: {
-      username: true,
-      name: true,
-      avatarUrl: true,
-    },
-  });
+  const { data: sessionUser } = await admin
+    .from("users")
+    .select("username, name, avatar_url")
+    .eq("id", session.userId)
+    .maybeSingle();
 
-  const dbMessages = await getChatMessages(sharedChat.id);
+  const dbMessages = await getChatMessages(sharedChat.id, admin);
 
   // Build messages with timing: compute duration for each assistant message
   // based on the gap from the preceding user message's createdAt
@@ -120,6 +119,7 @@ export default async function SharedPage({ params }: SharedPageProps) {
     session;
   const modelName = await resolveSharedModelName(
     session.userId,
+    session.workspaceId,
     sharedChat.modelId,
   );
   const ownerSessionHref =
@@ -144,9 +144,9 @@ export default async function SharedPage({ params }: SharedPageProps) {
       sharedBy={
         sessionUser
           ? {
-              username: sessionUser.username,
-              name: sessionUser.name,
-              avatarUrl: sessionUser.avatarUrl,
+              username: sessionUser.username as string,
+              name: sessionUser.name as string | null,
+              avatarUrl: sessionUser.avatar_url as string | null,
             }
           : null
       }

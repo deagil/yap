@@ -33,9 +33,11 @@ export async function GET(req: Request, context: RouteContext) {
     return sessionContext.response;
   }
 
+  const workspaceId = sessionContext.sessionRecord.workspaceId;
+
   const [chats, rawPreferences] = await Promise.all([
     getChatSummariesBySessionId(sessionId, authResult.userId),
-    getUserPreferences(authResult.userId),
+    getUserPreferences(authResult.userId, workspaceId),
   ]);
   const preferences = sanitizeUserPreferencesForSession(
     rawPreferences,
@@ -61,6 +63,8 @@ export async function POST(req: Request, context: RouteContext) {
   if (!sessionContext.ok) {
     return sessionContext.response;
   }
+
+  const workspaceId = sessionContext.sessionRecord.workspaceId;
 
   let requestedChatId: string | null = null;
   try {
@@ -91,15 +95,18 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   const preferences = sanitizeUserPreferencesForSession(
-    await getUserPreferences(authResult.userId),
+    await getUserPreferences(authResult.userId, workspaceId),
     session,
     req.url,
   );
   const chat = await createChat({
     id: requestedChatId ?? nanoid(),
+    workspaceId,
     sessionId,
     title: "New chat",
     modelId: preferences.defaultModelId,
+    activeStreamId: null,
+    lastAssistantMessageAt: null,
   });
 
   return Response.json({ chat });

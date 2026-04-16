@@ -62,12 +62,12 @@ export function hasAllowedManagedTemplateEmail(email?: string) {
 }
 
 export function isManagedTemplateTrialUser(
-  session: Pick<Session, "authProvider" | "user"> | null | undefined,
+  session: Pick<Session, "user"> | null | undefined,
   url: string | URL,
 ) {
   return (
-    session?.authProvider === "vercel" &&
+    Boolean(session?.user) &&
     isManagedTemplateDeployment(url) &&
-    !hasAllowedManagedTemplateEmail(session.user.email)
+    !hasAllowedManagedTemplateEmail(session?.user?.email)
   );
 }

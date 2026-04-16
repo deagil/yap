@@ -500,7 +500,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       gitUser,
       env,
       githubToken,
-      vcpus = 4,
+      vcpus = 1,
       timeout = 300_000,
       runtime = "node22",
       ports,

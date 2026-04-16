@@ -12,7 +12,12 @@ mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
 
+mock.module("@/lib/workspace/context", () => ({
+  getActiveWorkspaceIdForUser: async () => "workspace-1",
+}));
+
 mock.module("@/lib/vercel/token", () => ({
+  getWorkspaceVercelToken: async () => currentToken,
   getUserVercelToken: async () => currentToken,
 }));
 

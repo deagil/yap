@@ -26,7 +26,7 @@ import type { DiffFile } from "@/app/api/sessions/[sessionId]/diff/route";
 import type { WebAgentUIMessage } from "@/app/types";
 import type { MergeReadinessResponse } from "@/app/api/sessions/[sessionId]/merge-readiness/route";
 import type { MergePullRequestResponse } from "@/app/api/sessions/[sessionId]/merge/route";
-import type { Session } from "@/lib/db/schema";
+import type { Session } from "@/lib/db/types";
 import type {
   PullRequestCheckRun,
   PullRequestMergeMethod,

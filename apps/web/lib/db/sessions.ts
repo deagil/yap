@@ -1,178 +1,283 @@
-import type { SandboxState } from "@open-harness/sandbox";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
-import { db } from "./client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createServerSupabase } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
-  chatMessages,
-  chatReads,
-  chats,
-  type NewChat,
-  type NewChatMessage,
-  type NewChatRead,
-  type NewSession,
-  type NewShare,
-  sessions,
-  shares,
-} from "./schema";
+  chatMessageToDb,
+  chatReadToDb,
+  chatToDb,
+  mapChat,
+  mapChatMessage,
+  mapChatRead,
+  mapSession,
+  mapShare,
+  normalizeLegacySandboxState,
+  sessionToDb,
+  shareToDb,
+} from "./session-map";
+import type {
+  Chat,
+  ChatMessage,
+  NewChat,
+  NewChatMessage,
+  NewChatRead,
+  NewSession,
+  NewShare,
+  Session,
+} from "./types";
 
-export function normalizeLegacySandboxState(
-  sandboxState: unknown,
-): SandboxState | null | undefined {
-  if (!sandboxState || typeof sandboxState !== "object") {
-    return sandboxState as null | undefined;
+export { normalizeLegacySandboxState };
+
+async function resolveClient(
+  client: SupabaseClient | undefined,
+  workflow = false,
+): Promise<SupabaseClient> {
+  if (client) {
+    return client;
   }
-
-  const state = sandboxState as Record<string, unknown>;
-  const normalizedType = state.type === "hybrid" ? "vercel" : state.type;
-  const sandboxName =
-    typeof state.sandboxName === "string" && state.sandboxName.length > 0
-      ? state.sandboxName
-      : typeof state.sandboxId === "string" && state.sandboxId.length > 0
-        ? state.sandboxId
-        : undefined;
-
-  if (normalizedType !== "vercel") {
-    return sandboxState as SandboxState;
+  if (workflow) {
+    return getSupabaseAdmin();
   }
-
-  if (normalizedType === state.type && sandboxName === undefined) {
-    return sandboxState as SandboxState;
-  }
-
-  const normalizedState: Record<string, unknown> = {
-    ...state,
-    type: normalizedType,
-  };
-
-  if (sandboxName !== undefined) {
-    normalizedState.sandboxName = sandboxName;
-    delete normalizedState.sandboxId;
-  }
-
-  return normalizedState as unknown as SandboxState;
+  return createServerSupabase();
 }
 
-function normalizeSessionRecord<T extends { sandboxState: unknown }>(
-  session: T,
-): T {
-  return {
-    ...session,
-    sandboxState: normalizeLegacySandboxState(session.sandboxState) ?? null,
-  };
-}
-
-export async function createSession(data: NewSession) {
-  const [session] = await db.insert(sessions).values(data).returning();
-  if (!session) {
-    throw new Error("Failed to create session");
+export async function createSession(data: NewSession, client?: SupabaseClient) {
+  const supabase = await resolveClient(client);
+  const row = sessionToDb(data);
+  const { data: inserted, error } = await supabase
+    .from("sessions")
+    .insert(row)
+    .select()
+    .single();
+  if (error) {
+    throw error;
   }
-  return normalizeSessionRecord(session);
+  return mapSession(inserted as Record<string, unknown>);
 }
 
 interface CreateSessionWithInitialChatInput {
   session: NewSession;
-  initialChat: Pick<NewChat, "id" | "title" | "modelId">;
+  initialChat: Pick<NewChat, "id" | "title" | "modelId" | "workspaceId">;
 }
 
 export async function createSessionWithInitialChat(
   input: CreateSessionWithInitialChatInput,
+  client?: SupabaseClient,
 ) {
-  return db.transaction(async (tx) => {
-    const [session] = await tx
-      .insert(sessions)
-      .values(input.session)
-      .returning();
-    if (!session) {
-      throw new Error("Failed to create session");
-    }
-
-    const [chat] = await tx
-      .insert(chats)
-      .values({
-        id: input.initialChat.id,
-        sessionId: session.id,
-        title: input.initialChat.title,
-        modelId: input.initialChat.modelId,
-      })
-      .returning();
-    if (!chat) {
-      throw new Error("Failed to create chat");
-    }
-
-    return { session: normalizeSessionRecord(session), chat };
-  });
-}
-
-export async function getSessionById(sessionId: string) {
-  const session = await db.query.sessions.findFirst({
-    where: eq(sessions.id, sessionId),
-  });
-
-  return session ? normalizeSessionRecord(session) : session;
-}
-
-export async function getShareById(shareId: string) {
-  return db.query.shares.findFirst({
-    where: eq(shares.id, shareId),
-  });
-}
-
-export async function getShareByChatId(chatId: string) {
-  return db.query.shares.findFirst({
-    where: eq(shares.chatId, chatId),
-  });
-}
-
-export async function createShareIfNotExists(data: NewShare) {
-  const [share] = await db
-    .insert(shares)
-    .values(data)
-    .onConflictDoNothing({ target: shares.chatId })
-    .returning();
-
-  if (share) {
-    return share;
+  const supabase = await resolveClient(client);
+  const sRow = sessionToDb(input.session);
+  const { data: session, error: sErr } = await supabase
+    .from("sessions")
+    .insert(sRow)
+    .select()
+    .single();
+  if (sErr) {
+    throw sErr;
   }
 
-  return getShareByChatId(data.chatId);
-}
-
-export async function deleteShareByChatId(chatId: string) {
-  await db.delete(shares).where(eq(shares.chatId, chatId));
-}
-
-export async function getSessionsByUserId(userId: string) {
-  const records = await db.query.sessions.findMany({
-    where: eq(sessions.userId, userId),
-    orderBy: [desc(sessions.createdAt)],
+  const cRow = chatToDb({
+    id: input.initialChat.id,
+    workspaceId: input.initialChat.workspaceId,
+    sessionId: (session as { id: string }).id,
+    title: input.initialChat.title,
+    modelId: input.initialChat.modelId ?? null,
+    activeStreamId: null,
+    lastAssistantMessageAt: null,
   });
 
-  return records.map((session) => normalizeSessionRecord(session));
+  const { data: chat, error: cErr } = await supabase
+    .from("chats")
+    .insert(cRow)
+    .select()
+    .single();
+  if (cErr) {
+    throw cErr;
+  }
+
+  return {
+    session: mapSession(session as Record<string, unknown>),
+    chat: mapChat(chat as Record<string, unknown>),
+  };
 }
 
-export async function countSessionsByUserId(userId: string): Promise<number> {
-  const [result] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(sessions)
-    .where(eq(sessions.userId, userId));
+export async function getSessionById(
+  sessionId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client, true);
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapSession(data as Record<string, unknown>) : null;
+}
 
-  return result?.count ?? 0;
+/** GitHub PR webhooks: match sessions by repo + PR number (service-role / admin client). */
+export async function getSessionsByRepoAndPrNumber(
+  repoOwner: string,
+  repoName: string,
+  prNumber: number,
+  client?: SupabaseClient,
+): Promise<Session[]> {
+  const supabase = await resolveClient(client, true);
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("*")
+    .ilike("repo_owner", repoOwner)
+    .ilike("repo_name", repoName)
+    .eq("pr_number", prNumber);
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((r) => mapSession(r as Record<string, unknown>));
+}
+
+export async function getShareById(shareId: string, client?: SupabaseClient) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("shares")
+    .select()
+    .eq("id", shareId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapShare(data as Record<string, unknown>) : null;
+}
+
+export async function getShareByChatId(
+  chatId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("shares")
+    .select()
+    .eq("chat_id", chatId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapShare(data as Record<string, unknown>) : null;
+}
+
+export async function createShareIfNotExists(
+  data: NewShare,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const row = shareToDb(data);
+  const { data: inserted, error } = await supabase
+    .from("shares")
+    .insert(row)
+    .select()
+    .maybeSingle();
+  if (error) {
+    if (error.code === "23505") {
+      return getShareByChatId(data.chatId, supabase);
+    }
+    throw error;
+  }
+  if (inserted) {
+    return mapShare(inserted as Record<string, unknown>);
+  }
+  return getShareByChatId(data.chatId, supabase);
+}
+
+export async function deleteShareByChatId(
+  chatId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { error } = await supabase
+    .from("shares")
+    .delete()
+    .eq("chat_id", chatId);
+  if (error) {
+    throw error;
+  }
+}
+
+export async function getSessionsByUserId(
+  userId: string,
+  workspaceId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((r) => mapSession(r as Record<string, unknown>));
+}
+
+export async function countSessionsByUserId(
+  userId: string,
+  workspaceId: string,
+  client?: SupabaseClient,
+): Promise<number> {
+  const supabase = await resolveClient(client);
+  const { count, error } = await supabase
+    .from("sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId);
+  if (error) {
+    throw error;
+  }
+  return count ?? 0;
 }
 
 export async function countUserMessagesByUserId(
   userId: string,
+  workspaceId: string,
+  client?: SupabaseClient,
 ): Promise<number> {
-  const [result] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(chatMessages)
-    .innerJoin(chats, eq(chats.id, chatMessages.chatId))
-    .innerJoin(sessions, eq(sessions.id, chats.sessionId))
-    .where(and(eq(sessions.userId, userId), eq(chatMessages.role, "user")));
-
-  return result?.count ?? 0;
+  const supabase = await resolveClient(client);
+  const { data: sessions, error: sErr } = await supabase
+    .from("sessions")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId);
+  if (sErr) {
+    throw sErr;
+  }
+  const sessionIds = (sessions ?? []).map((s) => s.id as string);
+  if (sessionIds.length === 0) {
+    return 0;
+  }
+  const { data: chats, error: cErr } = await supabase
+    .from("chats")
+    .select("id")
+    .in("session_id", sessionIds);
+  if (cErr) {
+    throw cErr;
+  }
+  const chatIds = (chats ?? []).map((c) => c.id as string);
+  if (chatIds.length === 0) {
+    return 0;
+  }
+  const { count, error } = await supabase
+    .from("chat_messages")
+    .select("*", { count: "exact", head: true })
+    .eq("role", "user")
+    .in("chat_id", chatIds);
+  if (error) {
+    throw error;
+  }
+  return count ?? 0;
 }
 
 type SessionSidebarFields = Pick<
-  typeof sessions.$inferSelect,
+  Session,
   | "id"
   | "title"
   | "status"
@@ -199,278 +304,415 @@ type GetSessionsWithUnreadByUserIdOptions = {
   offset?: number;
 };
 
-/**
- * Returns sessions for a user, each annotated with a `hasUnread` flag
- * that is true when any chat in the session has unread assistant messages.
- *
- * The sidebar only needs lightweight fields, so we intentionally avoid
- * selecting heavyweight JSON columns like `sandboxState` and `cachedDiff`.
- */
 export async function getSessionsWithUnreadByUserId(
-  userId: string,
+  _userId: string,
+  workspaceId: string,
   options?: GetSessionsWithUnreadByUserIdOptions,
+  client?: SupabaseClient,
 ): Promise<SessionWithUnread[]> {
+  const supabase = await resolveClient(client);
   const status = options?.status ?? "all";
-  const statusFilter =
-    status === "active"
-      ? ne(sessions.status, "archived")
-      : status === "archived"
-        ? eq(sessions.status, "archived")
-        : undefined;
+  const pStatus =
+    status === "all" ? "all" : status === "active" ? "active" : "archived";
 
-  const baseQuery = db
-    .select({
-      id: sessions.id,
-      title: sessions.title,
-      status: sessions.status,
-      repoOwner: sessions.repoOwner,
-      repoName: sessions.repoName,
-      branch: sessions.branch,
-      linesAdded: sessions.linesAdded,
-      linesRemoved: sessions.linesRemoved,
-      prNumber: sessions.prNumber,
-      prStatus: sessions.prStatus,
-      createdAt: sessions.createdAt,
-      lastActivityAt: sql<Date>`COALESCE(MAX(${chats.updatedAt}), ${sessions.createdAt})`,
-      hasUnread: sql<boolean>`COALESCE(BOOL_OR(
-        CASE
-          WHEN ${chats.lastAssistantMessageAt} IS NULL THEN false
-          WHEN ${chatReads.lastReadAt} IS NULL THEN true
-          WHEN ${chats.lastAssistantMessageAt} > ${chatReads.lastReadAt} THEN true
-          ELSE false
-        END
-      ), false)`,
-      hasStreaming: sql<boolean>`COALESCE(BOOL_OR(${chats.activeStreamId} IS NOT NULL), false)`,
-      latestChatId: sql<string | null>`(
-        ARRAY_AGG(${chats.id} ORDER BY ${chats.updatedAt} DESC, ${chats.createdAt} DESC)
-        FILTER (WHERE ${chats.id} IS NOT NULL)
-      )[1]`,
-    })
-    .from(sessions)
-    .leftJoin(chats, eq(chats.sessionId, sessions.id))
-    .leftJoin(
-      chatReads,
-      and(eq(chatReads.chatId, chats.id), eq(chatReads.userId, userId)),
-    )
-    .where(
-      statusFilter
-        ? and(eq(sessions.userId, userId), statusFilter)
-        : eq(sessions.userId, userId),
-    )
-    .groupBy(sessions.id)
-    .orderBy(desc(sessions.createdAt));
+  const { data: rows, error } = await supabase.rpc("get_sessions_with_unread", {
+    p_workspace_id: workspaceId,
+    p_status: pStatus,
+    p_limit: options?.limit ?? null,
+    p_offset: options?.offset ?? 0,
+  });
+  if (error) {
+    throw error;
+  }
 
-  const withOffset =
-    typeof options?.offset === "number" && options.offset > 0
-      ? baseQuery.offset(options.offset)
-      : baseQuery;
-
-  const rows =
-    typeof options?.limit === "number"
-      ? await withOffset.limit(options.limit)
-      : await withOffset;
-
-  return rows;
+  return (rows ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id,
+    title: r.title,
+    status: r.status as Session["status"],
+    repoOwner: r.repo_owner,
+    repoName: r.repo_name,
+    branch: r.branch,
+    linesAdded: r.lines_added,
+    linesRemoved: r.lines_removed,
+    prNumber: r.pr_number,
+    prStatus: r.pr_status as Session["prStatus"],
+    createdAt: new Date(r.created_at as string),
+    lastActivityAt: new Date(r.last_activity_at as string),
+    hasUnread: r.has_unread,
+    hasStreaming: r.has_streaming,
+    latestChatId: r.latest_chat_id,
+  }));
 }
 
 export async function getArchivedSessionCountByUserId(
   userId: string,
+  workspaceId: string,
+  client?: SupabaseClient,
 ): Promise<number> {
-  const [result] = await db
-    .select({ count: sql<number>`COUNT(*)::int` })
-    .from(sessions)
-    .where(and(eq(sessions.userId, userId), eq(sessions.status, "archived")));
-
-  return result?.count ?? 0;
+  const supabase = await resolveClient(client);
+  const { count, error } = await supabase
+    .from("sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
+    .eq("status", "archived");
+  if (error) {
+    throw error;
+  }
+  return count ?? 0;
 }
 
-/**
- * Returns a Set of all session titles for a given user.
- * Used to avoid duplicate random city names when creating new sessions.
- */
 export async function getUsedSessionTitles(
   userId: string,
+  workspaceId: string,
+  client?: SupabaseClient,
 ): Promise<Set<string>> {
-  const rows = await db
-    .select({ title: sessions.title })
-    .from(sessions)
-    .where(eq(sessions.userId, userId));
-  return new Set(rows.map((r) => r.title));
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("title")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId);
+  if (error) {
+    throw error;
+  }
+  return new Set((data ?? []).map((r) => String(r.title)));
 }
 
 export async function updateSession(
   sessionId: string,
   data: Partial<Omit<NewSession, "id" | "userId" | "createdAt">>,
+  client?: SupabaseClient,
 ) {
-  const [session] = await db
-    .update(sessions)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(sessions.id, sessionId))
-    .returning();
+  const supabase = await resolveClient(client);
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  const map: [keyof typeof data, string][] = [
+    ["title", "title"],
+    ["workspaceId", "workspace_id"],
+    ["status", "status"],
+    ["repoOwner", "repo_owner"],
+    ["repoName", "repo_name"],
+    ["branch", "branch"],
+    ["cloneUrl", "clone_url"],
+    ["vercelProjectId", "vercel_project_id"],
+    ["vercelProjectName", "vercel_project_name"],
+    ["vercelTeamId", "vercel_team_id"],
+    ["vercelTeamSlug", "vercel_team_slug"],
+    ["isNewBranch", "is_new_branch"],
+    ["autoCommitPushOverride", "auto_commit_push_override"],
+    ["autoCreatePrOverride", "auto_create_pr_override"],
+    ["globalSkillRefs", "global_skill_refs"],
+    ["sandboxState", "sandbox_state"],
+    ["lifecycleState", "lifecycle_state"],
+    ["lifecycleVersion", "lifecycle_version"],
+    ["lastActivityAt", "last_activity_at"],
+    ["sandboxExpiresAt", "sandbox_expires_at"],
+    ["hibernateAfter", "hibernate_after"],
+    ["lifecycleRunId", "lifecycle_run_id"],
+    ["lifecycleError", "lifecycle_error"],
+    ["linesAdded", "lines_added"],
+    ["linesRemoved", "lines_removed"],
+    ["prNumber", "pr_number"],
+    ["prStatus", "pr_status"],
+    ["snapshotUrl", "snapshot_url"],
+    ["snapshotCreatedAt", "snapshot_created_at"],
+    ["snapshotSizeBytes", "snapshot_size_bytes"],
+    ["cachedDiff", "cached_diff"],
+    ["cachedDiffUpdatedAt", "cached_diff_updated_at"],
+  ];
+  for (const [k, col] of map) {
+    if (k in data && (data as Record<string, unknown>)[k] !== undefined) {
+      const v = (data as Record<string, unknown>)[k];
+      if (
+        k === "lastActivityAt" ||
+        k === "sandboxExpiresAt" ||
+        k === "hibernateAfter" ||
+        k === "snapshotCreatedAt" ||
+        k === "cachedDiffUpdatedAt"
+      ) {
+        patch[col] = v == null ? null : ((v as Date).toISOString?.() ?? v);
+      } else {
+        patch[col] = v;
+      }
+    }
+  }
 
-  return session ? normalizeSessionRecord(session) : session;
+  const { data: updated, error } = await supabase
+    .from("sessions")
+    .update(patch)
+    .eq("id", sessionId)
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return updated ? mapSession(updated as Record<string, unknown>) : null;
 }
 
-/**
- * Atomically claims the session lifecycle lease when no run is currently
- * recorded. Returns true when the claim succeeds.
- */
 export async function claimSessionLifecycleRunId(
   sessionId: string,
   runId: string,
+  client?: SupabaseClient,
 ) {
-  const [updated] = await db
-    .update(sessions)
-    .set({ lifecycleRunId: runId, updatedAt: new Date() })
-    .where(and(eq(sessions.id, sessionId), isNull(sessions.lifecycleRunId)))
-    .returning({ id: sessions.id });
-
+  const supabase = await resolveClient(client, true);
+  const { data: current } = await supabase
+    .from("sessions")
+    .select("lifecycle_run_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!current) {
+    return false;
+  }
+  if (current.lifecycle_run_id && current.lifecycle_run_id !== runId) {
+    return false;
+  }
+  if (current.lifecycle_run_id === runId) {
+    return true;
+  }
+  const { data: updated, error } = await supabase
+    .from("sessions")
+    .update({
+      lifecycle_run_id: runId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId)
+    .is("lifecycle_run_id", null)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
   return Boolean(updated);
 }
 
-export async function deleteSession(sessionId: string) {
-  await db.delete(sessions).where(eq(sessions.id, sessionId));
-}
-
-export async function createChat(data: NewChat) {
-  const [chat] = await db.insert(chats).values(data).returning();
-  if (!chat) {
-    throw new Error("Failed to create chat");
+export async function deleteSession(
+  sessionId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { error } = await supabase
+    .from("sessions")
+    .delete()
+    .eq("id", sessionId);
+  if (error) {
+    throw error;
   }
-  return chat;
 }
 
-export async function getChatById(chatId: string) {
-  return db.query.chats.findFirst({
-    where: eq(chats.id, chatId),
-  });
+export async function createChat(data: NewChat, client?: SupabaseClient) {
+  const supabase = await resolveClient(client);
+  const { data: chat, error } = await supabase
+    .from("chats")
+    .insert(chatToDb(data))
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChat(chat as Record<string, unknown>);
 }
 
-/**
- * Get all chats for a session, ordered by most recent activity first.
- * Activity is tracked on chats.updatedAt and updated when new messages arrive.
- */
-export async function getChatsBySessionId(sessionId: string) {
-  return db.query.chats.findMany({
-    where: eq(chats.sessionId, sessionId),
-    orderBy: [desc(chats.updatedAt), desc(chats.createdAt)],
-  });
+export async function getChatById(chatId: string, client?: SupabaseClient) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("chats")
+    .select()
+    .eq("id", chatId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapChat(data as Record<string, unknown>) : null;
 }
 
-export type ChatSummary = typeof chats.$inferSelect & {
+export async function getChatsBySessionId(
+  sessionId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("chats")
+    .select()
+    .eq("session_id", sessionId)
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((r) => mapChat(r as Record<string, unknown>));
+}
+
+export type ChatSummary = Chat & {
   hasUnread: boolean;
   isStreaming: boolean;
 };
 
-/**
- * Returns chats with per-user unread flags for sidebar rendering.
- */
 export async function getChatSummariesBySessionId(
   sessionId: string,
   userId: string,
-): Promise<ChatSummary[]> {
-  const rows = await db
-    .select({
-      id: chats.id,
-      sessionId: chats.sessionId,
-      title: chats.title,
-      modelId: chats.modelId,
-      activeStreamId: chats.activeStreamId,
-      lastAssistantMessageAt: chats.lastAssistantMessageAt,
-      createdAt: chats.createdAt,
-      updatedAt: chats.updatedAt,
-      hasUnread: sql<boolean>`
-        CASE
-          WHEN ${chats.lastAssistantMessageAt} IS NULL THEN false
-          WHEN ${chatReads.lastReadAt} IS NULL THEN true
-          WHEN ${chats.lastAssistantMessageAt} > ${chatReads.lastReadAt} THEN true
-          ELSE false
-        END
-      `,
-      isStreaming: sql<boolean>`${chats.activeStreamId} IS NOT NULL`,
-    })
-    .from(chats)
-    .leftJoin(
-      chatReads,
-      and(eq(chatReads.chatId, chats.id), eq(chatReads.userId, userId)),
-    )
-    .where(eq(chats.sessionId, sessionId))
-    .orderBy(chats.createdAt);
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data: chats, error: cErr } = await supabase
+    .from("chats")
+    .select()
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+  if (cErr) {
+    throw cErr;
+  }
+  const list = chats ?? [];
+  if (list.length === 0) {
+    return [];
+  }
+  const chatIds = list.map((c) => c.id as string);
+  const { data: reads, error: rErr } = await supabase
+    .from("chat_reads")
+    .select()
+    .eq("user_id", userId)
+    .in("chat_id", chatIds);
+  if (rErr) {
+    throw rErr;
+  }
+  const readMap = new Map(
+    (reads ?? []).map((r) => [
+      r.chat_id as string,
+      new Date(r.last_read_at as string),
+    ]),
+  );
 
-  return rows;
+  return list.map((c) => {
+    const chat = mapChat(c as Record<string, unknown>);
+    const lastAssistant = chat.lastAssistantMessageAt;
+    const lastRead = readMap.get(chat.id);
+    const hasUnread =
+      lastAssistant != null && (lastRead == null || lastAssistant > lastRead);
+    return {
+      ...chat,
+      hasUnread,
+      isStreaming: chat.activeStreamId != null,
+    };
+  });
 }
 
 export async function updateChat(
   chatId: string,
   data: Partial<Omit<NewChat, "id" | "sessionId" | "createdAt">>,
+  client?: SupabaseClient,
 ) {
-  const [chat] = await db
-    .update(chats)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(chats.id, chatId))
-    .returning();
-  return chat;
+  const supabase = await resolveClient(client);
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (data.title !== undefined) {
+    patch.title = data.title;
+  }
+  if (data.modelId !== undefined) {
+    patch.model_id = data.modelId;
+  }
+  if (data.activeStreamId !== undefined) {
+    patch.active_stream_id = data.activeStreamId;
+  }
+  if (data.lastAssistantMessageAt !== undefined) {
+    patch.last_assistant_message_at =
+      data.lastAssistantMessageAt?.toISOString() ?? null;
+  }
+  const { data: chat, error } = await supabase
+    .from("chats")
+    .update(patch)
+    .eq("id", chatId)
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChat(chat as Record<string, unknown>);
 }
 
-export async function touchChat(chatId: string, activityAt = new Date()) {
-  const [chat] = await db
-    .update(chats)
-    .set({ updatedAt: activityAt })
-    .where(eq(chats.id, chatId))
-    .returning();
-  return chat;
+export async function touchChat(
+  chatId: string,
+  activityAt = new Date(),
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data: chat, error } = await supabase
+    .from("chats")
+    .update({ updated_at: activityAt.toISOString() })
+    .eq("id", chatId)
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChat(chat as Record<string, unknown>);
 }
 
 export async function updateChatAssistantActivity(
   chatId: string,
   activityAt: Date,
+  client?: SupabaseClient,
 ) {
-  const [chat] = await db
-    .update(chats)
-    .set({
-      lastAssistantMessageAt: activityAt,
-      updatedAt: activityAt,
+  const supabase = await resolveClient(client);
+  const { data: chat, error } = await supabase
+    .from("chats")
+    .update({
+      last_assistant_message_at: activityAt.toISOString(),
+      updated_at: activityAt.toISOString(),
     })
-    .where(eq(chats.id, chatId))
-    .returning();
-  return chat;
+    .eq("id", chatId)
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChat(chat as Record<string, unknown>);
 }
 
 export async function updateChatActiveStreamId(
   chatId: string,
   streamId: string | null,
+  client?: SupabaseClient,
 ) {
-  await db
-    .update(chats)
-    .set({ activeStreamId: streamId })
-    .where(eq(chats.id, chatId));
+  const supabase = await resolveClient(client);
+  const { error } = await supabase
+    .from("chats")
+    .update({ active_stream_id: streamId })
+    .eq("id", chatId);
+  if (error) {
+    throw error;
+  }
 }
 
-/**
- * Atomically updates activeStreamId only when the current value matches
- * `expectedStreamId`. Returns true when the update succeeds.
- */
 export async function compareAndSetChatActiveStreamId(
   chatId: string,
   expectedStreamId: string | null,
   nextStreamId: string | null,
+  client?: SupabaseClient,
 ) {
-  const activeStreamMatch =
+  const supabase = await resolveClient(client);
+  let q = supabase
+    .from("chats")
+    .update({ active_stream_id: nextStreamId })
+    .eq("id", chatId);
+  q =
     expectedStreamId === null
-      ? isNull(chats.activeStreamId)
-      : eq(chats.activeStreamId, expectedStreamId);
-
-  const [updated] = await db
-    .update(chats)
-    .set({ activeStreamId: nextStreamId })
-    .where(and(eq(chats.id, chatId), activeStreamMatch))
-    .returning({ id: chats.id });
-
-  return Boolean(updated);
+      ? q.is("active_stream_id", null)
+      : q.eq("active_stream_id", expectedStreamId);
+  const { data, error } = await q.select("id").maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return Boolean(data);
 }
 
-export async function deleteChat(chatId: string) {
-  await db.delete(chats).where(eq(chats.id, chatId));
+export async function deleteChat(chatId: string, client?: SupabaseClient) {
+  const supabase = await resolveClient(client);
+  const { error } = await supabase.from("chats").delete().eq("id", chatId);
+  if (error) {
+    throw error;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -493,189 +735,232 @@ type ForkChatThroughMessageInput = {
   userId: string;
   sourceChatId: string;
   throughMessageId: string;
-  forkedChat: Pick<NewChat, "id" | "sessionId" | "title" | "modelId">;
+  forkedChat: Pick<
+    NewChat,
+    "id" | "sessionId" | "title" | "modelId" | "workspaceId"
+  >;
 };
 
 type ForkChatThroughMessageResult =
-  | { status: "created"; chat: typeof chats.$inferSelect }
+  | { status: "created"; chat: Chat }
   | { status: "message_not_found" }
   | { status: "not_assistant_message" };
 
 export async function forkChatThroughMessage(
   input: ForkChatThroughMessageInput,
+  client?: SupabaseClient,
 ): Promise<ForkChatThroughMessageResult> {
-  return db.transaction(async (tx) => {
-    const sourceMessages = await tx
-      .select({
-        id: chatMessages.id,
-        role: chatMessages.role,
-        parts: chatMessages.parts,
-        createdAt: chatMessages.createdAt,
-      })
-      .from(chatMessages)
-      .where(eq(chatMessages.chatId, input.sourceChatId))
-      .orderBy(chatMessages.createdAt, chatMessages.id);
+  const supabase = await resolveClient(client, true);
 
-    const throughMessageIndex = sourceMessages.findIndex(
-      (message) => message.id === input.throughMessageId,
-    );
-    if (throughMessageIndex < 0) {
-      return { status: "message_not_found" };
-    }
-
-    const throughMessage = sourceMessages[throughMessageIndex];
-    if (!throughMessage || throughMessage.role !== "assistant") {
-      return { status: "not_assistant_message" };
-    }
-
-    const now = new Date();
-    const [forkedChat] = await tx
-      .insert(chats)
-      .values({
-        ...input.forkedChat,
-        activeStreamId: null,
-        lastAssistantMessageAt: throughMessage.createdAt,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-
-    if (!forkedChat) {
-      throw new Error("Failed to create forked chat");
-    }
-
-    const messagesToCopy = sourceMessages.slice(0, throughMessageIndex + 1);
-    if (messagesToCopy.length > 0) {
-      await tx.insert(chatMessages).values(
-        messagesToCopy.map((message) => {
-          const forkedMessageId = crypto.randomUUID();
-          return {
-            id: forkedMessageId,
-            chatId: forkedChat.id,
-            role: message.role,
-            parts: cloneChatMessagePartsWithId(message.parts, forkedMessageId),
-            createdAt: message.createdAt,
-          };
-        }),
-      );
-    }
-
-    await tx
-      .insert(chatReads)
-      .values({
-        userId: input.userId,
-        chatId: forkedChat.id,
-        lastReadAt: now,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [chatReads.userId, chatReads.chatId],
-        set: {
-          lastReadAt: now,
-          updatedAt: now,
-        },
-      });
-
-    return {
-      status: "created",
-      chat: forkedChat,
-    };
-  });
-}
-
-export async function createChatMessage(data: NewChatMessage) {
-  const [message] = await db.insert(chatMessages).values(data).returning();
-  if (!message) {
-    throw new Error("Failed to create chat message");
+  const { data: sourceMessages, error: mErr } = await supabase
+    .from("chat_messages")
+    .select("id, role, parts, created_at")
+    .eq("chat_id", input.sourceChatId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (mErr) {
+    throw mErr;
   }
-  return message;
+
+  const ordered = sourceMessages ?? [];
+  const throughMessageIndex = ordered.findIndex(
+    (message) => message.id === input.throughMessageId,
+  );
+  if (throughMessageIndex < 0) {
+    return { status: "message_not_found" };
+  }
+
+  const throughMessage = ordered[throughMessageIndex];
+  if (!throughMessage || throughMessage.role !== "assistant") {
+    return { status: "not_assistant_message" };
+  }
+
+  const now = new Date().toISOString();
+  const { data: forkedChat, error: cErr } = await supabase
+    .from("chats")
+    .insert(
+      chatToDb({
+        id: input.forkedChat.id,
+        workspaceId: input.forkedChat.workspaceId,
+        sessionId: input.forkedChat.sessionId,
+        title: input.forkedChat.title,
+        modelId: input.forkedChat.modelId ?? null,
+        activeStreamId: null,
+        lastAssistantMessageAt: new Date(throughMessage.created_at as string),
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      }),
+    )
+    .select()
+    .single();
+  if (cErr) {
+    throw cErr;
+  }
+
+  const messagesToCopy = ordered.slice(0, throughMessageIndex + 1);
+  if (messagesToCopy.length > 0) {
+    const rows = messagesToCopy.map((message) => {
+      const forkedMessageId = crypto.randomUUID();
+      return chatMessageToDb({
+        id: forkedMessageId,
+        workspaceId: input.forkedChat.workspaceId,
+        chatId: forkedChat.id as string,
+        role: message.role as "user" | "assistant",
+        parts: cloneChatMessagePartsWithId(message.parts, forkedMessageId),
+        createdAt: new Date(message.created_at as string),
+      });
+    });
+    const { error: insErr } = await supabase.from("chat_messages").insert(rows);
+    if (insErr) {
+      throw insErr;
+    }
+  }
+
+  const { error: readErr } = await supabase.from("chat_reads").upsert(
+    chatReadToDb({
+      userId: input.userId,
+      workspaceId: input.forkedChat.workspaceId,
+      chatId: forkedChat.id as string,
+      lastReadAt: new Date(now),
+      createdAt: new Date(now),
+      updatedAt: new Date(now),
+    }),
+    { onConflict: "user_id,chat_id" },
+  );
+  if (readErr) {
+    throw readErr;
+  }
+
+  return {
+    status: "created",
+    chat: mapChat(forkedChat as Record<string, unknown>),
+  };
 }
 
-/**
- * Creates a chat message if it doesn't already exist (idempotent insert).
- * Uses onConflictDoNothing to handle race conditions gracefully.
- * Returns the message if created, or undefined if it already existed.
- */
-export async function createChatMessageIfNotExists(data: NewChatMessage) {
-  const [message] = await db
-    .insert(chatMessages)
-    .values(data)
-    .onConflictDoNothing({ target: chatMessages.id })
-    .returning();
-  return message;
+export async function createChatMessage(
+  data: NewChatMessage,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data: message, error } = await supabase
+    .from("chat_messages")
+    .insert(chatMessageToDb(data))
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChatMessage(message as Record<string, unknown>);
 }
 
-/**
- * Upserts a chat message - inserts if new, updates parts if already exists.
- * Use this for assistant messages that may have tool results added client-side.
- */
-export async function upsertChatMessage(data: NewChatMessage) {
-  const [message] = await db
-    .insert(chatMessages)
-    .values(data)
-    .onConflictDoUpdate({
-      target: chatMessages.id,
-      set: { parts: data.parts },
-    })
-    .returning();
-  return message;
+export async function createChatMessageIfNotExists(
+  data: NewChatMessage,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data: message, error } = await supabase
+    .from("chat_messages")
+    .insert(chatMessageToDb(data))
+    .select()
+    .maybeSingle();
+  if (error && error.code !== "23505") {
+    throw error;
+  }
+  return message
+    ? mapChatMessage(message as Record<string, unknown>)
+    : undefined;
+}
+
+export async function upsertChatMessage(
+  data: NewChatMessage,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data: message, error } = await supabase
+    .from("chat_messages")
+    .upsert(chatMessageToDb(data), { onConflict: "id" })
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChatMessage(message as Record<string, unknown>);
 }
 
 type UpsertChatMessageScopedResult =
-  | { status: "inserted"; message: typeof chatMessages.$inferSelect }
-  | { status: "updated"; message: typeof chatMessages.$inferSelect }
+  | { status: "inserted"; message: ChatMessage }
+  | { status: "updated"; message: ChatMessage }
   | { status: "conflict" };
 
-/**
- * Upserts a chat message only when the existing row matches the same chat and role.
- * This prevents accidental overwrite when an ID collision occurs across chats/roles.
- */
 export async function upsertChatMessageScoped(
   data: NewChatMessage,
+  client?: SupabaseClient,
 ): Promise<UpsertChatMessageScopedResult> {
-  return db.transaction(async (tx) => {
-    const [inserted] = await tx
-      .insert(chatMessages)
-      .values(data)
-      .onConflictDoNothing({ target: chatMessages.id })
-      .returning();
+  const supabase = await resolveClient(client);
+  const { data: inserted, error: insErr } = await supabase
+    .from("chat_messages")
+    .insert(chatMessageToDb(data))
+    .select()
+    .maybeSingle();
+  if (insErr && insErr.code !== "23505") {
+    throw insErr;
+  }
+  if (inserted) {
+    return {
+      status: "inserted",
+      message: mapChatMessage(inserted as Record<string, unknown>),
+    };
+  }
 
-    if (inserted) {
-      return { status: "inserted", message: inserted };
-    }
+  const { data: updated, error: updErr } = await supabase
+    .from("chat_messages")
+    .update({ parts: data.parts })
+    .eq("id", data.id)
+    .eq("chat_id", data.chatId)
+    .eq("role", data.role)
+    .select()
+    .maybeSingle();
+  if (updErr) {
+    throw updErr;
+  }
+  if (updated) {
+    return {
+      status: "updated",
+      message: mapChatMessage(updated as Record<string, unknown>),
+    };
+  }
 
-    const [updated] = await tx
-      .update(chatMessages)
-      .set({ parts: data.parts })
-      .where(
-        and(
-          eq(chatMessages.id, data.id),
-          eq(chatMessages.chatId, data.chatId),
-          eq(chatMessages.role, data.role),
-        ),
-      )
-      .returning();
-
-    if (updated) {
-      return { status: "updated", message: updated };
-    }
-
-    return { status: "conflict" };
-  });
+  return { status: "conflict" };
 }
 
-export async function getChatMessageById(messageId: string) {
-  return db.query.chatMessages.findFirst({
-    where: eq(chatMessages.id, messageId),
-  });
+export async function getChatMessageById(
+  messageId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select()
+    .eq("id", messageId)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapChatMessage(data as Record<string, unknown>) : null;
 }
 
-export async function getChatMessages(chatId: string) {
-  return db.query.chatMessages.findMany({
-    where: eq(chatMessages.chatId, chatId),
-    orderBy: [chatMessages.createdAt, chatMessages.id],
-  });
+export async function getChatMessages(chatId: string, client?: SupabaseClient) {
+  const supabase = await resolveClient(client);
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select()
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((r) => mapChatMessage(r as Record<string, unknown>));
 }
 
 type DeleteChatMessageAndFollowingResult =
@@ -686,100 +971,112 @@ type DeleteChatMessageAndFollowingResult =
 export async function deleteChatMessageAndFollowing(
   chatId: string,
   messageId: string,
+  client?: SupabaseClient,
 ): Promise<DeleteChatMessageAndFollowingResult> {
-  return db.transaction(async (tx) => {
-    const orderedMessages = await tx
-      .select({
-        id: chatMessages.id,
-        role: chatMessages.role,
-      })
-      .from(chatMessages)
-      .where(eq(chatMessages.chatId, chatId))
-      .orderBy(chatMessages.createdAt, chatMessages.id);
+  const supabase = await resolveClient(client, true);
 
-    const startIndex = orderedMessages.findIndex(
-      (message) => message.id === messageId,
-    );
-    if (startIndex < 0) {
-      return { status: "not_found" };
-    }
+  const { data: orderedMessages, error: oErr } = await supabase
+    .from("chat_messages")
+    .select("id, role")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (oErr) {
+    throw oErr;
+  }
 
-    const targetMessage = orderedMessages[startIndex];
-    if (!targetMessage || targetMessage.role !== "user") {
-      return { status: "not_user_message" };
-    }
+  const ordered = orderedMessages ?? [];
+  const startIndex = ordered.findIndex((message) => message.id === messageId);
+  if (startIndex < 0) {
+    return { status: "not_found" };
+  }
 
-    const idsToDelete = orderedMessages
-      .slice(startIndex)
-      .map((message) => message.id);
+  const targetMessage = ordered[startIndex];
+  if (!targetMessage || targetMessage.role !== "user") {
+    return { status: "not_user_message" };
+  }
 
-    await tx
-      .delete(chatMessages)
-      .where(
-        and(
-          eq(chatMessages.chatId, chatId),
-          inArray(chatMessages.id, idsToDelete),
-        ),
-      );
+  const idsToDelete = ordered
+    .slice(startIndex)
+    .map((message) => message.id as string);
 
-    const [latestAssistantMessage] = await tx
-      .select({ createdAt: chatMessages.createdAt })
-      .from(chatMessages)
-      .where(
-        and(
-          eq(chatMessages.chatId, chatId),
-          eq(chatMessages.role, "assistant"),
-        ),
-      )
-      .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
-      .limit(1);
+  const { error: delErr } = await supabase
+    .from("chat_messages")
+    .delete()
+    .eq("chat_id", chatId)
+    .in("id", idsToDelete);
+  if (delErr) {
+    throw delErr;
+  }
 
-    await tx
-      .update(chats)
-      .set({
-        lastAssistantMessageAt: latestAssistantMessage?.createdAt ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(chats.id, chatId));
+  const { data: latestAssistant } = await supabase
+    .from("chat_messages")
+    .select("created_at")
+    .eq("chat_id", chatId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-    return {
-      status: "deleted",
-      deletedMessageIds: idsToDelete,
-    };
-  });
+  await supabase
+    .from("chats")
+    .update({
+      last_assistant_message_at: latestAssistant?.created_at ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", chatId);
+
+  return {
+    status: "deleted",
+    deletedMessageIds: idsToDelete,
+  };
 }
 
-export async function isFirstChatMessage(chatId: string, messageId: string) {
-  const rows = await db
-    .select({ id: chatMessages.id })
-    .from(chatMessages)
-    .where(eq(chatMessages.chatId, chatId))
-    .orderBy(chatMessages.createdAt, chatMessages.id)
+export async function isFirstChatMessage(
+  chatId: string,
+  messageId: string,
+  client?: SupabaseClient,
+) {
+  const supabase = await resolveClient(client);
+  const { data: rows, error } = await supabase
+    .from("chat_messages")
+    .select("id")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(2);
-
-  return rows.length === 1 && rows[0]?.id === messageId;
+  if (error) {
+    throw error;
+  }
+  return rows?.length === 1 && rows[0]?.id === messageId;
 }
 
 export async function markChatRead(
-  data: Pick<NewChatRead, "userId" | "chatId">,
+  data: Pick<NewChatRead, "userId" | "chatId" | "workspaceId">,
+  client?: SupabaseClient,
 ) {
-  const now = new Date();
-  const [chatRead] = await db
-    .insert(chatReads)
-    .values({
-      userId: data.userId,
-      chatId: data.chatId,
-      lastReadAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [chatReads.userId, chatReads.chatId],
-      set: {
-        lastReadAt: now,
-        updatedAt: now,
+  const supabase = await resolveClient(client);
+  const now = new Date().toISOString();
+  const { data: chatRead, error } = await supabase
+    .from("chat_reads")
+    .upsert(
+      {
+        ...chatReadToDb({
+          userId: data.userId,
+          workspaceId: data.workspaceId,
+          chatId: data.chatId,
+          lastReadAt: new Date(now),
+          createdAt: new Date(now),
+          updatedAt: new Date(now),
+        }),
       },
-    })
-    .returning();
-
-  return chatRead;
+      { onConflict: "user_id,chat_id" },
+    )
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
+  return mapChatRead(chatRead as Record<string, unknown>);
 }

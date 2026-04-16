@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
-import type { Chat } from "@/lib/db/schema";
+import type { Chat } from "@/lib/db/types";
 import { fetcherNoStore } from "@/lib/swr";
 
 export type SessionChatListItem = Chat & {
@@ -491,9 +491,16 @@ export function useSessionChats(
       throw new Error("Missing sessionId");
     }
 
+    const workspaceId =
+      chats[0]?.workspaceId ?? data?.chats[0]?.workspaceId ?? null;
+    if (!workspaceId) {
+      throw new Error("Missing workspace for new chat");
+    }
+
     const now = new Date();
     const optimisticChat: Chat = {
       id: crypto.randomUUID(),
+      workspaceId,
       sessionId,
       title: "New chat",
       modelId: data?.defaultModelId ?? null,
@@ -586,6 +593,7 @@ export function useSessionChats(
     const now = new Date();
     const optimisticChat: Chat = {
       id: crypto.randomUUID(),
+      workspaceId: sourceChat.workspaceId,
       sessionId,
       title: `Fork of ${sourceChat.title}`,
       modelId: sourceChat.modelId,

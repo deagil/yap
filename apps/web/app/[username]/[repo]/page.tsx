@@ -11,6 +11,8 @@ import { getUserGitHubToken } from "@/lib/github/user-token";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
+import type { NewSession } from "@/lib/db/types";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 interface RepoPageProps {
   params: Promise<{ username: string; repo: string }>;
@@ -59,9 +61,15 @@ export default async function RepoPage({ params }: RepoPageProps) {
     );
   }
 
-  const preferencesPromise = getUserPreferences(session.user.id);
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    redirect(`/sign-in?next=${encodeURIComponent(`/${username}/${repo}`)}`);
+  }
+
+  const preferencesPromise = getUserPreferences(session.user.id, workspaceId);
   const savedVercelProjectPromise = getVercelProjectLinkByRepo(
     session.user.id,
+    workspaceId,
     username,
     repo,
   );
@@ -100,34 +108,53 @@ export default async function RepoPage({ params }: RepoPageProps) {
 
   const cloneUrl = `https://github.com/${username}/${repo}.git`;
 
-  const usedNames = await getUsedSessionTitles(session.user.id);
+  const usedNames = await getUsedSessionTitles(session.user.id, workspaceId);
   const title = getRandomCityName(usedNames);
 
+  const newSession: NewSession = {
+    id: nanoid(),
+    workspaceId,
+    userId: session.user.id,
+    title,
+    status: "running",
+    repoOwner: username,
+    repoName: repo,
+    branch: repoInfo.default_branch,
+    cloneUrl,
+    vercelProjectId: savedVercelProject?.projectId ?? null,
+    vercelProjectName: savedVercelProject?.projectName ?? null,
+    vercelTeamId: savedVercelProject?.teamId ?? null,
+    vercelTeamSlug: savedVercelProject?.teamSlug ?? null,
+    isNewBranch: false,
+    autoCommitPushOverride: preferences.autoCommitPush,
+    autoCreatePrOverride: preferences.autoCommitPush
+      ? preferences.autoCreatePr
+      : false,
+    globalSkillRefs: preferences.globalSkillRefs,
+    sandboxState: { type: preferences.defaultSandboxType },
+    lifecycleState: "provisioning",
+    lifecycleVersion: 0,
+    lastActivityAt: null,
+    sandboxExpiresAt: null,
+    hibernateAfter: null,
+    lifecycleRunId: null,
+    lifecycleError: null,
+    linesAdded: null,
+    linesRemoved: null,
+    prNumber: null,
+    prStatus: null,
+    snapshotUrl: null,
+    snapshotCreatedAt: null,
+    snapshotSizeBytes: null,
+    cachedDiff: null,
+    cachedDiffUpdatedAt: null,
+  };
+
   const result = await createSessionWithInitialChat({
-    session: {
-      id: nanoid(),
-      userId: session.user.id,
-      title,
-      status: "running",
-      repoOwner: username,
-      repoName: repo,
-      branch: repoInfo.default_branch,
-      cloneUrl,
-      vercelProjectId: savedVercelProject?.projectId ?? null,
-      vercelProjectName: savedVercelProject?.projectName ?? null,
-      vercelTeamId: savedVercelProject?.teamId ?? null,
-      vercelTeamSlug: savedVercelProject?.teamSlug ?? null,
-      isNewBranch: false,
-      autoCommitPushOverride: preferences.autoCommitPush,
-      autoCreatePrOverride: preferences.autoCommitPush
-        ? preferences.autoCreatePr
-        : false,
-      sandboxState: { type: preferences.defaultSandboxType },
-      lifecycleState: "provisioning",
-      lifecycleVersion: 0,
-    },
+    session: newSession,
     initialChat: {
       id: nanoid(),
+      workspaceId,
       title: "New chat",
       modelId: preferences.defaultModelId,
     },

@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { and, eq, sql } from "drizzle-orm";
 import { after } from "next/server";
 import { z } from "zod";
 import {
@@ -8,10 +7,11 @@ import {
   updateInstallationsByInstallationId,
   upsertInstallation,
 } from "@/lib/db/installations";
-import { updateSession } from "@/lib/db/sessions";
-import { db } from "@/lib/db/client";
-import { sessions } from "@/lib/db/schema";
+import { getSessionsByRepoAndPrNumber, updateSession } from "@/lib/db/sessions";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { archiveSession } from "@/lib/sandbox/archive-session";
+
+const admin = () => getSupabaseAdmin();
 
 const installationWebhookSchema = z.object({
   action: z.string(),
@@ -80,13 +80,12 @@ async function handlePullRequestWebhook(
         : "closed"
       : "open";
 
-  const linkedSessions = await db.query.sessions.findMany({
-    where: and(
-      sql`lower(${sessions.repoOwner}) = ${repoOwner.toLowerCase()}`,
-      sql`lower(${sessions.repoName}) = ${repoName.toLowerCase()}`,
-      eq(sessions.prNumber, prNumber),
-    ),
-  });
+  const linkedSessions = await getSessionsByRepoAndPrNumber(
+    repoOwner,
+    repoName,
+    prNumber,
+    admin(),
+  );
 
   if (linkedSessions.length === 0) {
     return Response.json({
@@ -130,7 +129,11 @@ async function handlePullRequestWebhook(
     }
 
     if (Object.keys(updatePayload).length > 0) {
-      const updated = await updateSession(sessionRecord.id, updatePayload);
+      const updated = await updateSession(
+        sessionRecord.id,
+        updatePayload,
+        admin(),
+      );
       if (updated) {
         updatedSessions += 1;
       }
@@ -210,7 +213,10 @@ export async function POST(req: Request): Promise<Response> {
   const installationUrl = parsed.data.installation.html_url ?? null;
 
   if (event === "installation" && parsed.data.action === "deleted") {
-    const deleted = await deleteInstallationByInstallationId(installationId);
+    const deleted = await deleteInstallationByInstallationId(
+      installationId,
+      admin(),
+    );
     return Response.json({ ok: true, deleted });
   }
 
@@ -218,7 +224,10 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, ignored: true, reason: "no-updates" });
   }
 
-  const existing = await getInstallationsByInstallationId(installationId);
+  const existing = await getInstallationsByInstallationId(
+    installationId,
+    admin(),
+  );
 
   if (
     existing.length > 0 &&
@@ -227,23 +236,31 @@ export async function POST(req: Request): Promise<Response> {
     (event === "installation" || event === "installation_repositories")
   ) {
     for (const row of existing) {
-      await upsertInstallation({
-        userId: row.userId,
-        installationId,
-        accountLogin: account.login,
-        accountType: normalizeAccountType(account.type),
-        repositorySelection,
-        installationUrl,
-      });
+      await upsertInstallation(
+        {
+          workspaceId: row.workspaceId,
+          userId: row.userId,
+          installationId,
+          accountLogin: account.login,
+          accountType: normalizeAccountType(account.type),
+          repositorySelection,
+          installationUrl,
+        },
+        admin(),
+      );
     }
 
     return Response.json({ ok: true, updatedUsers: existing.length });
   }
 
-  const updated = await updateInstallationsByInstallationId(installationId, {
-    ...(repositorySelection ? { repositorySelection } : {}),
-    ...(installationUrl ? { installationUrl } : {}),
-  });
+  const updated = await updateInstallationsByInstallationId(
+    installationId,
+    {
+      ...(repositorySelection ? { repositorySelection } : {}),
+      ...(installationUrl ? { installationUrl } : {}),
+    },
+    admin(),
+  );
 
   return Response.json({ ok: true, updatedUsers: updated });
 }

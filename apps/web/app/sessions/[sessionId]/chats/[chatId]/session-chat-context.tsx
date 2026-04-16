@@ -28,7 +28,7 @@ import {
   useSessionGitStatus,
 } from "@/hooks/use-session-git-status";
 import { useSessionSkills } from "@/hooks/use-session-skills";
-import type { Chat, Session } from "@/lib/db/schema";
+import type { Chat, Session } from "@/lib/db/types";
 import { type ModelOption, withMissingModelOption } from "@/lib/model-options";
 import {
   clearSandboxResumeState,

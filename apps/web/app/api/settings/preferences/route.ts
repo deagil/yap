@@ -1,4 +1,5 @@
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 import {
   getUserPreferences,
   type DiffMode,
@@ -31,8 +32,13 @@ export async function GET(req: Request) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return Response.json({ error: "No workspace selected" }, { status: 400 });
+  }
+
   const preferences = sanitizeUserPreferencesForSession(
-    await getUserPreferences(session.user.id),
+    await getUserPreferences(session.user.id, workspaceId),
     session,
     req.url,
   );
@@ -43,6 +49,11 @@ export async function PATCH(req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    return Response.json({ error: "No workspace selected" }, { status: 400 });
   }
 
   let body: UpdatePreferencesRequest;
@@ -150,7 +161,7 @@ export async function PATCH(req: Request) {
 
   try {
     const preferences = sanitizeUserPreferencesForSession(
-      await updateUserPreferences(session.user.id, body),
+      await updateUserPreferences(session.user.id, workspaceId, body),
       session,
       req.url,
     );

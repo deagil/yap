@@ -51,9 +51,11 @@ export async function GET(req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
+  const workspaceId = chatContext.sessionRecord.workspaceId;
+
   const [messages, preferences] = await Promise.all([
     getChatMessages(chatId),
-    getUserPreferences(authResult.userId),
+    getUserPreferences(authResult.userId, workspaceId),
   ]);
   const modelId =
     sanitizeSelectedModelIdForSession(
@@ -94,6 +96,8 @@ export async function PATCH(req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
+  const workspaceId = chatContext.sessionRecord.workspaceId;
+
   let body: UpdateChatRequest;
   try {
     body = (await req.json()) as UpdateChatRequest;
@@ -116,7 +120,10 @@ export async function PATCH(req: Request, context: RouteContext) {
     updatePayload.title = nextTitle;
   }
   if (nextModelId) {
-    const preferences = await getUserPreferences(authResult.userId);
+    const preferences = await getUserPreferences(
+      authResult.userId,
+      workspaceId,
+    );
     const sanitizedModelId = sanitizeSelectedModelIdForSession(
       nextModelId,
       getAllVariants(preferences.modelVariants),
@@ -131,7 +138,7 @@ export async function PATCH(req: Request, context: RouteContext) {
     return Response.json({ error: "Chat not found" }, { status: 404 });
   }
 
-  const preferences = await getUserPreferences(authResult.userId);
+  const preferences = await getUserPreferences(authResult.userId, workspaceId);
   return Response.json({
     chat: {
       ...updatedChat,

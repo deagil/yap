@@ -25,6 +25,10 @@ export async function POST(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  await markChatRead({ userId: authResult.userId, chatId });
+  await markChatRead({
+    userId: authResult.userId,
+    workspaceId: chatContext.chat.workspaceId,
+    chatId,
+  });
   return Response.json({ success: true });
 }

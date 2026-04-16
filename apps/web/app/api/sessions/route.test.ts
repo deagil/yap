@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 
+mock.module("server-only", () => ({}));
+
+mock.module("@/lib/workspace/context", () => ({
+  getActiveWorkspaceIdForUser: async () => "workspace-1",
+}));
+
 let currentSession: {
   authProvider?: "vercel" | "github";
   user: {
@@ -56,6 +62,15 @@ mock.module("@/lib/db/vercel-project-links", () => ({
 }));
 
 mock.module("@/lib/vercel/token", () => ({
+  getWorkspaceVercelToken: async () => currentVercelToken,
+  getWorkspaceVercelAuthInfo: async () =>
+    currentVercelToken
+      ? {
+          token: currentVercelToken,
+          expiresAt: Math.floor(Date.now() / 1000) + 3600,
+          externalId: "vercel-user",
+        }
+      : null,
   getUserVercelToken: async () => currentVercelToken,
 }));
 
@@ -190,6 +205,7 @@ describe("/api/sessions POST vercel project linking", () => {
     expect(upsertCalls).toEqual([
       {
         userId: "user-1",
+        workspaceId: "workspace-1",
         repoOwner: "Vercel",
         repoName: "Open-Harness",
         project: matchingProjects[0],

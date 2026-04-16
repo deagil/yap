@@ -97,6 +97,7 @@ export async function POST(req: Request) {
   }
 
   const { sessionRecord, chat } = chatContext;
+  const workspaceId = chat.workspaceId;
   const activeSandboxState = sessionRecord.sandboxState;
   if (!activeSandboxState) {
     throw new Error("Sandbox not initialized");
@@ -107,7 +108,10 @@ export async function POST(req: Request) {
     if (latestUserMessage) {
       const existingMessage = await getChatMessageById(latestUserMessage.id);
       if (!existingMessage) {
-        const userMessageCount = await countUserMessagesByUserId(userId);
+        const userMessageCount = await countUserMessagesByUserId(
+          userId,
+          workspaceId,
+        );
         if (userMessageCount >= MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT) {
           return Response.json(
             { error: MANAGED_TEMPLATE_TRIAL_MESSAGE_LIMIT_ERROR },
@@ -154,23 +158,25 @@ export async function POST(req: Request) {
   // Persist the latest user message immediately (fire-and-forget) so it's
   // in the DB before the workflow starts. This ensures a page refresh
   // during workflow queue time still shows the message.
-  void persistLatestUserMessage(chatId, messages);
+  void persistLatestUserMessage(chatId, workspaceId, messages);
 
   // Also persist any assistant messages that contain client-side tool results
   // (e.g. ask_user_question responses). Without this, tool results are only
   // persisted when the workflow finishes, so switching devices mid-stream
   // would lose the tool result.
-  void persistAssistantMessagesWithToolResults(chatId, messages);
+  void persistAssistantMessagesWithToolResults(chatId, workspaceId, messages);
 
   const runtimePromise = createChatRuntime({
     userId,
     sessionId,
     sessionRecord,
   });
-  const preferencesPromise = getUserPreferences(userId).catch((error) => {
-    console.error("Failed to load user preferences:", error);
-    return null;
-  });
+  const preferencesPromise = getUserPreferences(userId, workspaceId).catch(
+    (error) => {
+      console.error("Failed to load user preferences:", error);
+      return null;
+    },
+  );
 
   const [{ sandbox, skills }, rawPreferences] = await Promise.all([
     runtimePromise,
@@ -228,6 +234,7 @@ export async function POST(req: Request) {
       chatId,
       sessionId,
       userId,
+      workspaceId,
       selectedModelId: selectedModelId ?? mainModelSelection.id,
       modelId: mainModelSelection.id,
       maxSteps: 500,
@@ -352,6 +359,7 @@ async function reconcileExistingActiveStream(
 
 async function persistLatestUserMessage(
   chatId: string,
+  workspaceId: string,
   messages: WebAgentUIMessage[],
 ): Promise<void> {
   const latestMessage = messages[messages.length - 1];
@@ -362,6 +370,7 @@ async function persistLatestUserMessage(
   try {
     const created = await createChatMessageIfNotExists({
       id: latestMessage.id,
+      workspaceId,
       chatId,
       role: "user",
       parts: latestMessage,

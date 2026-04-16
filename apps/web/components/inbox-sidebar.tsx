@@ -48,6 +48,10 @@ import type { SessionWithUnread } from "@/hooks/use-sessions";
 import type { Session as AuthSession } from "@/lib/session/types";
 import { formatRelativeTime } from "@/lib/format-relative-time";
 import { getUsageLeaderboardDomain } from "@/lib/usage/leaderboard-domain";
+import {
+  WorkspaceSwitcher,
+  type WorkspaceSummary,
+} from "@/components/workspace/workspace-switcher";
 
 type InboxSidebarProps = {
   sessions: SessionWithUnread[];
@@ -68,6 +72,10 @@ type InboxSidebarProps = {
     branch: string,
   ) => void;
   initialUser?: AuthSession["user"];
+  workspaceSwitcher: {
+    activeWorkspaceId: string;
+    workspaces: WorkspaceSummary[];
+  };
 };
 
 type ArchivedSessionsResponse = {
@@ -652,6 +660,7 @@ export function InboxSidebar({
   onCreateSessionForRepo,
   onCreateSessionFromBranch,
   initialUser,
+  workspaceSwitcher,
 }: InboxSidebarProps) {
   const router = useRouter();
   const { session } = useSession();
@@ -924,6 +933,12 @@ export function InboxSidebar({
   return (
     <>
       <div className="border-b border-border p-3">
+        <div className="mb-2 px-1">
+          <WorkspaceSwitcher
+            activeWorkspaceId={workspaceSwitcher.activeWorkspaceId}
+            workspaces={workspaceSwitcher.workspaces}
+          />
+        </div>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center px-2 py-1.5 text-sm text-primary">
             <span>Sessions</span>

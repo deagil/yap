@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Session } from "@/lib/db/schema";
+import type { Session } from "@/lib/db/types";
 
 interface ClosePrDialogProps {
   open: boolean;

@@ -14,7 +14,7 @@ import {
   type SessionChatListItem,
   useSessionChats,
 } from "@/hooks/use-session-chats";
-import type { Session } from "@/lib/db/schema";
+import type { Session } from "@/lib/db/types";
 import {
   GitPanelProvider,
   useGitPanel,

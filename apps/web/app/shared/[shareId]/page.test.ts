@@ -1,5 +1,39 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
+const sessionUserRow = {
+  username: "testuser",
+  name: "Test User",
+  avatar_url: "https://example.com/avatar.png",
+};
+
+mock.module("@/lib/supabase/admin", () => ({
+  getSupabaseAdmin: () => ({
+    from(table: string) {
+      if (table === "users") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: sessionUserRow,
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+        }),
+      };
+    },
+  }),
+}));
+
 const NOT_FOUND_ERROR = new Error("not-found");
 
 let shareRecord: { id: string; chatId: string } | null = {
@@ -22,6 +56,7 @@ let chatRecord: {
 let sessionRecord: {
   id: string;
   userId: string;
+  workspaceId: string;
   title: string;
   repoOwner: string | null;
   repoName: string | null;
@@ -32,6 +67,7 @@ let sessionRecord: {
 } | null = {
   id: "session-1",
   userId: "user-1",
+  workspaceId: "workspace-1",
   title: "Session Title",
   repoOwner: "acme",
   repoName: "repo",
@@ -66,33 +102,29 @@ mock.module("@/lib/db/sessions-cache", () => ({
   getSessionByIdCached: async () => sessionRecord,
 }));
 
-mock.module("@/lib/db/client", () => ({
-  db: {
-    query: {
-      users: {
-        findFirst: async () => ({
-          username: "testuser",
-          name: "Test User",
-          avatarUrl: "https://example.com/avatar.png",
-        }),
-      },
-    },
-  },
-}));
-
 mock.module("@/lib/db/sessions", () => ({
   getChatById: async () => chatRecord,
   getChatMessages: async () => messageRows,
 }));
 
 mock.module("@/lib/db/user-preferences", () => ({
-  getUserPreferences: async () => ({
+  getUserPreferences: async (
+    _userId: string,
+    _workspaceId: string,
+    _client?: unknown,
+  ) => ({
     defaultModelId: "anthropic/claude-opus-4.6",
     defaultSubagentModelId: null,
-    defaultSandboxType: "vercel",
-    defaultDiffMode: "unified",
+    defaultSandboxType: "vercel" as const,
+    defaultDiffMode: "unified" as const,
     autoCommitPush: false,
+    autoCreatePr: false,
+    alertsEnabled: true,
+    alertSoundEnabled: true,
+    publicUsageEnabled: false,
+    globalSkillRefs: [],
     modelVariants: userModelVariants,
+    enabledModelIds: [],
   }),
 }));
 
@@ -119,6 +151,7 @@ describe("/shared/[shareId] page", () => {
     sessionRecord = {
       id: "session-1",
       userId: "user-1",
+      workspaceId: "workspace-1",
       title: "Session Title",
       repoOwner: "acme",
       repoName: "repo",

@@ -13,7 +13,7 @@ const RESTRICTED_MODEL_PREFIXES = ["anthropic/claude-opus-"];
 export const MANAGED_TEMPLATE_TRIAL_MODEL_ACCESS_ERROR =
   "This hosted deployment does not allow Claude Opus models for non-Vercel trial accounts. Deploy your own copy for full model access.";
 
-type SessionLike = Pick<Session, "authProvider" | "user"> | null | undefined;
+type SessionLike = Pick<Session, "user"> | null | undefined;
 
 function hasManagedTemplateModelRestrictions(
   session: SessionLike,

@@ -14,11 +14,10 @@ import { useSessions } from "@/hooks/use-sessions";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 
 interface HomePageProps {
-  hasSessionCookie: boolean;
   lastRepo: { owner: string; repo: string } | null;
 }
 
-export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
+export function HomePage({ lastRepo }: HomePageProps) {
   const router = useRouter();
   const { loading: sessionLoading, isAuthenticated } = useSession();
   const { sessions, loading, createSession } = useSessions({
@@ -68,7 +67,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
     router.push(`/sessions/${sessionId}`);
   };
 
-  if (sessionLoading && hasSessionCookie) {
+  if (sessionLoading) {
     return <HomeSkeleton lastRepo={lastRepo} />;
   }
 

@@ -3,6 +3,10 @@ import type { ModelVariant } from "@/lib/model-variants";
 
 mock.module("server-only", () => ({}));
 
+mock.module("@/lib/workspace/context", () => ({
+  getActiveWorkspaceIdForUser: async () => "workspace-1",
+}));
+
 const PROVIDER_OPTIONS_MAX_BYTES = 16 * 1024;
 
 let currentSession: {
@@ -59,9 +63,11 @@ mock.module("@/lib/session/get-server-session", () => ({
 }));
 
 mock.module("@/lib/db/user-preferences", () => ({
-  getUserPreferences: async () => preferences,
+  getUserPreferences: async (_userId: string, _workspaceId: string) =>
+    preferences,
   updateUserPreferences: async (
     _userId: string,
+    _workspaceId: string,
     updates: Partial<MockPreferences>,
   ) => {
     preferences = {

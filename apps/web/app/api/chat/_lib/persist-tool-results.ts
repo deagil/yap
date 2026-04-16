@@ -18,6 +18,7 @@ import { upsertChatMessageScoped } from "@/lib/db/sessions";
  */
 export async function persistAssistantMessagesWithToolResults(
   chatId: string,
+  workspaceId: string,
   messages: WebAgentUIMessage[],
 ): Promise<void> {
   const latestMessage = messages[messages.length - 1];
@@ -43,6 +44,7 @@ export async function persistAssistantMessagesWithToolResults(
     const dedupedMessage = dedupeMessageReasoning(latestMessage);
     const result = await upsertChatMessageScoped({
       id: dedupedMessage.id,
+      workspaceId,
       chatId,
       role: "assistant",
       parts: dedupedMessage,

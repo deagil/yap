@@ -51,6 +51,7 @@ describe("persistAssistantMessagesWithToolResults", () => {
   test("persists assistant message with tool results", async () => {
     await persistAssistantMessagesWithToolResults(
       "chat-1",
+      "workspace-1",
       assistantWithToolResult(),
     );
 
@@ -58,13 +59,14 @@ describe("persistAssistantMessagesWithToolResults", () => {
     const calls = upsertSpy.mock.calls as unknown[][];
     expect(calls[0]![0]).toMatchObject({
       id: "assistant-1",
+      workspaceId: "workspace-1",
       chatId: "chat-1",
       role: "assistant",
     });
   });
 
   test("skips when latest message is not assistant", async () => {
-    await persistAssistantMessagesWithToolResults("chat-1", [
+    await persistAssistantMessagesWithToolResults("chat-1", "workspace-1", [
       {
         id: "user-1",
         role: "user",
@@ -76,7 +78,7 @@ describe("persistAssistantMessagesWithToolResults", () => {
   });
 
   test("skips when assistant message has no tool results", async () => {
-    await persistAssistantMessagesWithToolResults("chat-1", [
+    await persistAssistantMessagesWithToolResults("chat-1", "workspace-1", [
       {
         id: "assistant-1",
         role: "assistant",
@@ -88,7 +90,7 @@ describe("persistAssistantMessagesWithToolResults", () => {
   });
 
   test("skips when messages array is empty", async () => {
-    await persistAssistantMessagesWithToolResults("chat-1", []);
+    await persistAssistantMessagesWithToolResults("chat-1", "workspace-1", []);
 
     expect(upsertSpy).not.toHaveBeenCalled();
   });
@@ -98,6 +100,7 @@ describe("persistAssistantMessagesWithToolResults", () => {
 
     await persistAssistantMessagesWithToolResults(
       "chat-1",
+      "workspace-1",
       assistantWithToolResult(),
     );
 
@@ -111,6 +114,7 @@ describe("persistAssistantMessagesWithToolResults", () => {
 
     await persistAssistantMessagesWithToolResults(
       "chat-1",
+      "workspace-1",
       assistantWithToolResult(),
     );
 

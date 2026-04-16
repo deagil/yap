@@ -1,12 +1,10 @@
 import { ImageResponse } from "next/og";
-import { eq, sql } from "drizzle-orm";
-import { db } from "@/lib/db/client";
-import { chatMessages, users, workflowRuns } from "@/lib/db/schema";
 import { getChatById } from "@/lib/db/sessions";
 import {
   getSessionByIdCached,
   getShareByIdCached,
 } from "@/lib/db/sessions-cache";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const alt = "Shared Open Agents session";
 export const size = { width: 1200, height: 630 };
@@ -38,46 +36,49 @@ export default async function Image({
 }) {
   const { shareId } = await params;
 
+  const admin = getSupabaseAdmin();
+
   const share = await getShareByIdCached(shareId);
   if (!share) return fallbackImage();
 
-  const chat = await getChatById(share.chatId);
+  const chat = await getChatById(share.chatId, admin);
   if (!chat) return fallbackImage();
 
   const session = await getSessionByIdCached(chat.sessionId);
   if (!session) return fallbackImage();
 
-  // Parallel fetch: owner, duration from workflow_runs, message count
-  const [ownerResult, durationResult, messageStats] = await Promise.all([
-    db
-      .select({
-        username: users.username,
-        name: users.name,
-        avatarUrl: users.avatarUrl,
-      })
-      .from(users)
-      .where(eq(users.id, session.userId))
-      .limit(1),
-    db
-      .select({
-        totalMs: sql<number>`coalesce(sum(${workflowRuns.totalDurationMs}), 0)`,
-      })
-      .from(workflowRuns)
-      .where(eq(workflowRuns.chatId, chat.id)),
-    db
-      .select({
-        count: sql<number>`count(*)`,
-      })
-      .from(chatMessages)
-      .where(eq(chatMessages.chatId, chat.id)),
+  const [userRes, wrRes, msgRes] = await Promise.all([
+    admin
+      .from("users")
+      .select("username, name, avatar_url")
+      .eq("id", session.userId)
+      .maybeSingle(),
+    admin
+      .from("workflow_runs")
+      .select("total_duration_ms")
+      .eq("chat_id", chat.id)
+      .eq("workspace_id", session.workspaceId),
+    admin
+      .from("chat_messages")
+      .select("*", { count: "exact", head: true })
+      .eq("chat_id", chat.id)
+      .eq("workspace_id", session.workspaceId),
   ]);
 
-  const owner = ownerResult[0];
+  const owner = userRes.data;
   if (!owner) return fallbackImage();
 
-  const displayName = owner.name?.trim() || owner.username;
-  const totalDurationMs = durationResult[0]?.totalMs ?? 0;
-  const messageCount = messageStats[0]?.count ?? 0;
+  const displayName =
+    (owner.name as string | null)?.trim() ||
+    (owner.username as string | undefined) ||
+    "";
+  const wrRows = wrRes.data ?? [];
+  const totalDurationMs = wrRows.reduce(
+    (acc, row: { total_duration_ms?: number | null }) =>
+      acc + (row.total_duration_ms ?? 0),
+    0,
+  );
+  const messageCount = msgRes.count ?? 0;
 
   const repoLabel =
     session.repoOwner && session.repoName
@@ -252,10 +253,10 @@ export default async function Image({
         >
           {/* Left: Avatar + name */}
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {owner.avatarUrl ? (
+            {owner.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={owner.avatarUrl}
+                src={owner.avatar_url as string}
                 alt=""
                 width={44}
                 height={44}

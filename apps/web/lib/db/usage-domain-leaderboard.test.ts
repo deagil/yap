@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import {
-  buildUsageDomainLeaderboardRows,
-  getUsageLeaderboardDomain,
-} from "./usage-domain-leaderboard";
+import { describe, expect, mock, test } from "bun:test";
+
+mock.module("server-only", () => ({}));
+
+const { buildUsageDomainLeaderboardRows, getUsageLeaderboardDomain } =
+  await import("./usage-domain-leaderboard");
 
 describe("getUsageLeaderboardDomain", () => {
   test("accepts verified internal domains", () => {

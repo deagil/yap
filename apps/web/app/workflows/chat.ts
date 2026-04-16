@@ -41,6 +41,7 @@ type Options = {
   chatId: string;
   sessionId: string;
   userId: string;
+  workspaceId: string;
   selectedModelId: string;
   modelId: string;
   agentOptions: OpenHarnessAgentCallOptions;
@@ -581,7 +582,11 @@ export async function runAgentWorkflow(options: Options) {
 
     // Persist the assistant message immediately so completed model output is not
     // lost if later post-finish work fails.
-    await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+    await persistAssistantMessage(
+      options.chatId,
+      pendingAssistantResponse,
+      options.workspaceId,
+    );
 
     // Persist the sandbox state so lifecycle timers stay accurate.
     if (sandboxState) {
@@ -714,7 +719,11 @@ export async function runAgentWorkflow(options: Options) {
     }
 
     if (didUpdateGitData) {
-      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+      await persistAssistantMessage(
+        options.chatId,
+        pendingAssistantResponse,
+        options.workspaceId,
+      );
     }
 
     await Promise.all([
@@ -750,6 +759,7 @@ export async function runAgentWorkflow(options: Options) {
       const runFinishedAt = new Date();
       await recordWorkflowUsage(
         options.userId,
+        options.workspaceId,
         options.modelId,
         totalUsage,
         pendingAssistantResponse,

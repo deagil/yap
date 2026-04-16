@@ -89,6 +89,8 @@ mock.module("@/lib/github/user-token", () => ({
 }));
 
 mock.module("@/lib/vercel/token", () => ({
+  getWorkspaceVercelAuthInfo: async () => currentVercelAuthInfo,
+  getWorkspaceVercelToken: async () => currentVercelAuthInfo?.token ?? null,
   getUserVercelAuthInfo: async () => currentVercelAuthInfo,
   getUserVercelToken: async () => currentVercelAuthInfo?.token ?? null,
 }));

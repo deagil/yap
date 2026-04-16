@@ -1,79 +1,99 @@
-import { and, eq } from "drizzle-orm";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { nanoid } from "nanoid";
-import { db } from "./client";
-import { accounts } from "./schema";
+import { createServerSupabase } from "@/lib/supabase/server";
 
-export async function upsertGitHubAccount(data: {
-  userId: string;
-  externalUserId: string;
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt?: Date;
-  scope?: string;
-  username: string;
-}): Promise<string> {
-  const existing = await db
-    .select({ id: accounts.id })
-    .from(accounts)
-    .where(
-      and(eq(accounts.userId, data.userId), eq(accounts.provider, "github")),
-    )
-    .limit(1);
+export async function upsertGitHubAccount(
+  data: {
+    userId: string;
+    externalUserId: string;
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: Date;
+    scope?: string;
+    username: string;
+  },
+  client?: SupabaseClient,
+): Promise<string> {
+  const supabase = client ?? (await createServerSupabase());
 
-  if (existing.length > 0 && existing[0]) {
-    await db
-      .update(accounts)
-      .set({
-        externalUserId: data.externalUserId,
-        accessToken: data.accessToken,
-        refreshToken: data.refreshToken ?? null,
-        expiresAt: data.expiresAt ?? null,
-        scope: data.scope,
-        username: data.username,
-        updatedAt: new Date(),
-      })
-      .where(eq(accounts.id, existing[0].id));
-    return existing[0].id;
+  const { data: existing, error: selErr } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("user_id", data.userId)
+    .eq("provider", "github")
+    .maybeSingle();
+  if (selErr) {
+    throw selErr;
+  }
+
+  const now = new Date().toISOString();
+  const row = {
+    external_user_id: data.externalUserId,
+    access_token: data.accessToken,
+    refresh_token: data.refreshToken ?? null,
+    expires_at: data.expiresAt?.toISOString() ?? null,
+    scope: data.scope ?? null,
+    username: data.username,
+    updated_at: now,
+  };
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("accounts")
+      .update(row)
+      .eq("id", existing.id);
+    if (error) {
+      throw error;
+    }
+    return existing.id;
   }
 
   const id = nanoid();
-  const now = new Date();
-  await db.insert(accounts).values({
+  const { error } = await supabase.from("accounts").insert({
     id,
-    userId: data.userId,
+    user_id: data.userId,
     provider: "github",
-    externalUserId: data.externalUserId,
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
-    expiresAt: data.expiresAt,
-    scope: data.scope,
-    username: data.username,
-    createdAt: now,
-    updatedAt: now,
+    ...row,
+    created_at: now,
   });
+  if (error) {
+    throw error;
+  }
   return id;
 }
 
-export async function getGitHubAccount(userId: string): Promise<{
+export async function getGitHubAccount(
+  userId: string,
+  client?: SupabaseClient,
+): Promise<{
   accessToken: string;
   refreshToken: string | null;
   expiresAt: Date | null;
   username: string;
   externalUserId: string;
 } | null> {
-  const result = await db
-    .select({
-      accessToken: accounts.accessToken,
-      refreshToken: accounts.refreshToken,
-      expiresAt: accounts.expiresAt,
-      username: accounts.username,
-      externalUserId: accounts.externalUserId,
-    })
-    .from(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.provider, "github")))
-    .limit(1);
-
-  return result[0] ?? null;
+  const supabase = client ?? (await createServerSupabase());
+  const { data, error } = await supabase
+    .from("accounts")
+    .select(
+      "access_token, refresh_token, expires_at, username, external_user_id",
+    )
+    .eq("user_id", userId)
+    .eq("provider", "github")
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    return null;
+  }
+  return {
+    accessToken: data.access_token as string,
+    refreshToken: (data.refresh_token as string | null) ?? null,
+    expiresAt: data.expires_at ? new Date(data.expires_at as string) : null,
+    username: data.username as string,
+    externalUserId: data.external_user_id as string,
+  };
 }
 
 export async function updateGitHubAccountTokens(
@@ -83,20 +103,35 @@ export async function updateGitHubAccountTokens(
     refreshToken?: string;
     expiresAt?: Date;
   },
+  client?: SupabaseClient,
 ): Promise<void> {
-  await db
-    .update(accounts)
-    .set({
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken ?? null,
-      expiresAt: data.expiresAt ?? null,
-      updatedAt: new Date(),
+  const supabase = client ?? (await createServerSupabase());
+  const { error } = await supabase
+    .from("accounts")
+    .update({
+      access_token: data.accessToken,
+      refresh_token: data.refreshToken ?? null,
+      expires_at: data.expiresAt?.toISOString() ?? null,
+      updated_at: new Date().toISOString(),
     })
-    .where(and(eq(accounts.userId, userId), eq(accounts.provider, "github")));
+    .eq("user_id", userId)
+    .eq("provider", "github");
+  if (error) {
+    throw error;
+  }
 }
 
-export async function deleteGitHubAccount(userId: string): Promise<void> {
-  await db
-    .delete(accounts)
-    .where(and(eq(accounts.userId, userId), eq(accounts.provider, "github")));
+export async function deleteGitHubAccount(
+  userId: string,
+  client?: SupabaseClient,
+): Promise<void> {
+  const supabase = client ?? (await createServerSupabase());
+  const { error } = await supabase
+    .from("accounts")
+    .delete()
+    .eq("user_id", userId)
+    .eq("provider", "github");
+  if (error) {
+    throw error;
+  }
 }

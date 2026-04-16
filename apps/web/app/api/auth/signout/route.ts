@@ -1,36 +1,40 @@
-import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import { getServerSession } from "@/lib/session/get-server-session";
-import { SESSION_COOKIE_NAME } from "@/lib/session/constants";
-import { revokeVercelToken } from "@/lib/vercel/oauth";
-import { getUserVercelToken } from "@/lib/vercel/token";
+import { type NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { ACTIVE_WORKSPACE_COOKIE_NAME } from "@/lib/workspace/constants";
 
 export async function POST(req: NextRequest): Promise<Response> {
-  const session = await getServerSession();
-
-  if (session?.user?.id) {
-    // Revoke Vercel token if signed in with Vercel
-    if (session.authProvider === "vercel") {
-      try {
-        const clientId = process.env.NEXT_PUBLIC_VERCEL_APP_CLIENT_ID;
-        const clientSecret = process.env.VERCEL_APP_CLIENT_SECRET;
-        if (clientId && clientSecret) {
-          const token = await getUserVercelToken(session.user.id);
-          if (token) {
-            await revokeVercelToken({ token, clientId, clientSecret });
-          }
-        }
-      } catch (error) {
-        console.error(
-          "Failed to revoke Vercel token:",
-          error instanceof Error ? error.message : "Unknown error",
-        );
-      }
-    }
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnon) {
+    return NextResponse.json(
+      { error: "Supabase is not configured" },
+      { status: 500 },
+    );
   }
 
-  const store = await cookies();
-  store.delete(SESSION_COOKIE_NAME);
+  const redirectUrl = new URL("/", req.url);
+  let response = NextResponse.redirect(redirectUrl);
 
-  return Response.redirect(new URL("/", req.url));
+  const cookieStore = await cookies();
+  const supabase = createServerClient(supabaseUrl, supabaseAnon, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, options);
+        }
+      },
+    },
+  });
+
+  await supabase.auth.signOut();
+  response.cookies.set(ACTIVE_WORKSPACE_COOKIE_NAME, "", {
+    path: "/",
+    maxAge: 0,
+  });
+
+  return response;
 }

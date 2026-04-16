@@ -27,6 +27,7 @@ import {
 import { getAllVariants } from "@/lib/model-variants";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
 import { SessionChatContent } from "./session-chat-content";
 import { SessionChatProvider } from "./session-chat-context";
@@ -59,7 +60,7 @@ async function getInitialModels() {
 async function getChatByIdWithRetry(
   chatId: string,
   sessionId: string,
-): Promise<Awaited<ReturnType<typeof getChatById>>> {
+): Promise<Awaited<ReturnType<typeof getChatById>> | null> {
   const maxAttempts = isOptimisticChatId(chatId)
     ? OPTIMISTIC_CHAT_RETRY_ATTEMPTS
     : 1;
@@ -72,7 +73,7 @@ async function getChatByIdWithRetry(
       await sleep(OPTIMISTIC_CHAT_RETRY_DELAY_MS);
     }
   }
-  return undefined;
+  return null;
 }
 
 export async function generateMetadata({
@@ -113,6 +114,11 @@ export default async function SessionChatPage({
     redirect("/");
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  if (!workspaceId) {
+    redirect("/");
+  }
+
   const requestHost = (await headers()).get("host") ?? "";
 
   // Fetch chat, messages, models, and preferences in parallel
@@ -121,7 +127,7 @@ export default async function SessionChatPage({
       getChatByIdWithRetry(chatId, sessionId),
       getChatMessages(chatId),
       getInitialModels(),
-      getUserPreferences(session.user.id),
+      getUserPreferences(session.user.id, workspaceId),
       getChatSummariesBySessionId(sessionId, session.user.id),
     ]);
 
