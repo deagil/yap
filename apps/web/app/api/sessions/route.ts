@@ -16,6 +16,7 @@ import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
 } from "@/lib/github/repo-identifiers";
+import { resolveInstallationIdForRepo } from "@/lib/github/workspace-token";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
 import type { NewSession } from "@/lib/db/types";
@@ -353,6 +354,16 @@ export async function POST(req: Request) {
     const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;
 
     const sessionId = nanoid();
+    let resolvedInstallationId: number | null = null;
+    if (repoOwner && repoName) {
+      resolvedInstallationId = await resolveInstallationIdForRepo({
+        workspaceId,
+        repoOwner,
+        repoName,
+        sessionInstallationId: null,
+      });
+    }
+
     const newSession: NewSession = {
       id: sessionId,
       workspaceId,
@@ -385,6 +396,7 @@ export async function POST(req: Request) {
       linesRemoved: null,
       prNumber: null,
       prStatus: null,
+      installationId: resolvedInstallationId,
       snapshotUrl: null,
       snapshotCreatedAt: null,
       snapshotSizeBytes: null,

@@ -41,6 +41,8 @@ export type Session = {
   linesRemoved: number | null;
   prNumber: number | null;
   prStatus: "open" | "merged" | "closed" | null;
+  /** GitHub App installation_id for workspace-scoped git/API (denormalized). */
+  installationId: number | null;
   snapshotUrl: string | null;
   snapshotCreatedAt: Date | null;
   snapshotSizeBytes: number | null;

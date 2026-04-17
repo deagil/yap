@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { Database } from "@/lib/supabase/types";
-import { ACTIVE_WORKSPACE_COOKIE_NAME } from "@/lib/workspace/constants";
+import { setActiveWorkspaceCookie } from "@/lib/workspace/active-workspace-cookie";
+import { ensureWorkspaceForUser } from "@/lib/workspace/ensure";
 
 function sanitizeNext(raw: string | null): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//")) {
@@ -32,18 +33,22 @@ export async function GET(request: Request): Promise<Response> {
     );
   }
 
-  const redirectTo = new URL(next, url.origin);
-  let response = NextResponse.redirect(redirectTo);
-
   const cookieStore = await cookies();
+  type PendingAuthCookie = {
+    name: string;
+    value: string;
+    options: Parameters<NextResponse["cookies"]["set"]>[2];
+  };
+  const pendingAuthCookies: PendingAuthCookie[] = [];
+
   const supabase = createServerClient<Database>(supabaseUrl, supabaseAnon, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
       },
       setAll(cookiesToSet) {
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
+        for (const row of cookiesToSet) {
+          pendingAuthCookies.push(row);
         }
       },
     },
@@ -65,60 +70,25 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const admin = getSupabaseAdmin();
-  let workspaceId: string | null = null;
+  const workspaceId = await ensureWorkspaceForUser(user, admin);
 
-  const identities = user.identities ?? [];
-  const slackIdentity = identities.find((i) => i.provider === "slack_oidc");
-  if (slackIdentity) {
-    const idData = slackIdentity.identity_data as
-      | Record<string, unknown>
-      | undefined;
-    const teamId =
-      (idData?.["https://slack.com/team_id"] as string | undefined) ??
-      (idData?.team_id as string | undefined);
-    const teamName =
-      (idData?.["https://slack.com/team_name"] as string | undefined) ??
-      (idData?.team_name as string | undefined) ??
-      "Workspace";
+  const { data: profile } = await supabase
+    .from("users")
+    .select("onboarding_complete")
+    .eq("id", user.id)
+    .maybeSingle();
 
-    if (teamId) {
-      const { data: wid, error: rpcErr } = await admin.rpc(
-        "ensure_workspace_for_slack",
-        {
-          p_slack_team_id: teamId,
-          p_slack_team_name: teamName,
-          p_user_id: user.id,
-        },
-      );
-      if (!rpcErr && wid != null) {
-        workspaceId = String(wid);
-      }
-    }
+  const onboardingComplete = profile?.onboarding_complete === true;
+  const destination = onboardingComplete
+    ? new URL(next, url.origin)
+    : new URL("/onboarding", url.origin);
+
+  const response = NextResponse.redirect(destination);
+  for (const { name, value, options } of pendingAuthCookies) {
+    response.cookies.set(name, value, options);
   }
-
-  if (!workspaceId) {
-    const label =
-      typeof user.email === "string"
-        ? (user.email.split("@")[0] ?? "Personal")
-        : "Personal";
-    const { data: wid, error: rpcErr } = await admin.rpc(
-      "ensure_personal_workspace",
-      {
-        p_user_id: user.id,
-        p_label: label,
-      },
-    );
-    if (!rpcErr && wid != null) {
-      workspaceId = String(wid);
-    }
-  }
-
   if (workspaceId) {
-    response.cookies.set(ACTIVE_WORKSPACE_COOKIE_NAME, workspaceId, {
-      path: "/",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 400,
-    });
+    setActiveWorkspaceCookie(response, workspaceId);
   }
 
   return response;

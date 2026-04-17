@@ -5,6 +5,7 @@ import {
 } from "@/app/api/sessions/_lib/session-context";
 import { updateSession } from "@/lib/db/sessions";
 import { findPullRequestByBranch } from "@/lib/github/client";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 
@@ -103,7 +104,22 @@ export async function POST(req: Request) {
     const currentPrStatus = branchChanged ? null : sessionRecord.prStatus;
 
     // 3. Check GitHub for an existing PR on this branch
-    const token = await getUserGitHubToken(authResult.userId);
+    let token: string | null = null;
+    if (sessionRecord.repoOwner && sessionRecord.repoName) {
+      token =
+        (
+          await getRepoAccessToken({
+            workspaceId: sessionRecord.workspaceId,
+            repoOwner: sessionRecord.repoOwner,
+            repoName: sessionRecord.repoName,
+            userId: authResult.userId,
+            sessionInstallationId: sessionRecord.installationId,
+          })
+        )?.token ?? null;
+    }
+    if (!token) {
+      token = await getUserGitHubToken(authResult.userId);
+    }
     if (!token) {
       // No token available -- return existing PR info if we have it
       return Response.json({

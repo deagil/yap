@@ -6,6 +6,7 @@ import {
   generateCodeVerifier,
   getVercelAuthorizationUrl,
 } from "@/lib/vercel/oauth";
+import { getPublicAppOriginFromRequestUrl } from "@/lib/http/public-app-origin";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
@@ -27,8 +28,9 @@ async function isWorkspaceAdmin(
 
 export async function GET(req: NextRequest): Promise<Response> {
   const session = await getServerSession();
+  const publicOrigin = getPublicAppOriginFromRequestUrl(req.url);
   if (!session?.user?.id) {
-    return Response.redirect(new URL("/sign-in", req.url));
+    return Response.redirect(new URL("/sign-in", publicOrigin));
   }
 
   const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
@@ -37,10 +39,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   const clientId = process.env.NEXT_PUBLIC_VERCEL_APP_CLIENT_ID;
-  const redirectUri = `${req.nextUrl.origin}/api/integrations/vercel/callback`;
+  const redirectUri = `${publicOrigin}/api/integrations/vercel/callback`;
 
   if (!clientId) {
-    return Response.redirect(new URL("/?error=vercel_not_configured", req.url));
+    return Response.redirect(
+      new URL("/?error=vercel_not_configured", publicOrigin),
+    );
   }
 
   const state = generateState();

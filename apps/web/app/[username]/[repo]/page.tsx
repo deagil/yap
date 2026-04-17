@@ -7,7 +7,10 @@ import {
 } from "@/lib/db/sessions";
 import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
 import { getUserPreferences } from "@/lib/db/user-preferences";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import {
+  getRepoAccessToken,
+  resolveInstallationIdForRepo,
+} from "@/lib/github/workspace-token";
 import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -74,13 +77,14 @@ export default async function RepoPage({ params }: RepoPageProps) {
     repo,
   );
 
-  // Get a GitHub token (if available) for private repo access
-  const token = await getUserGitHubToken(session.user.id)
-    .then((value) => value ?? undefined)
-    .catch(() => {
-      // No token available -- will try unauthenticated (works for public repos)
-      return undefined;
-    });
+  // Workspace installation token or user OAuth for private repo API access
+  const access = await getRepoAccessToken({
+    workspaceId,
+    repoOwner: username,
+    repoName: repo,
+    userId: session.user.id,
+  }).catch(() => null);
+  const token = access?.token;
 
   // Validate the repo exists and get its default branch
   let repoInfo = await fetchRepoInfo(username, repo, token);
@@ -110,6 +114,13 @@ export default async function RepoPage({ params }: RepoPageProps) {
 
   const usedNames = await getUsedSessionTitles(session.user.id, workspaceId);
   const title = getRandomCityName(usedNames);
+
+  const resolvedInstallationId = await resolveInstallationIdForRepo({
+    workspaceId,
+    repoOwner: username,
+    repoName: repo,
+    sessionInstallationId: null,
+  });
 
   const newSession: NewSession = {
     id: nanoid(),
@@ -143,6 +154,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
     linesRemoved: null,
     prNumber: null,
     prStatus: null,
+    installationId: resolvedInstallationId,
     snapshotUrl: null,
     snapshotCreatedAt: null,
     snapshotSizeBytes: null,

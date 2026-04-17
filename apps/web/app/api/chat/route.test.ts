@@ -6,6 +6,8 @@ mock.module("server-only", () => ({}));
 interface TestSessionRecord {
   id: string;
   userId: string;
+  workspaceId: string;
+  installationId?: number | null;
   title: string;
   cloneUrl: string;
   repoOwner: string;
@@ -189,6 +191,14 @@ mock.module("@/lib/github/user-token", () => ({
   getUserGitHubToken: async () => null,
 }));
 
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: async () => ({
+    token: "test-github-token",
+    source: "user" as const,
+    installationId: null,
+  }),
+}));
+
 mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_PORTS: [],
 }));
@@ -274,6 +284,8 @@ describe("/api/chat route", () => {
     sessionRecord = {
       id: "session-1",
       userId: "user-1",
+      workspaceId: "workspace-1",
+      installationId: null,
       title: "Session title",
       cloneUrl: "https://github.com/acme/repo.git",
       repoOwner: "acme",

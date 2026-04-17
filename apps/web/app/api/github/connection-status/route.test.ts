@@ -11,6 +11,7 @@ type AuthSession = {
 let authSession: AuthSession;
 let githubAccount: { username: string } | null;
 let installations: Array<{ installationId: number }>;
+let workspaceRows: Array<{ installationId: number }>;
 let userToken: string | null;
 let syncedInstallationsCount = 0;
 let syncError: Error | null;
@@ -30,6 +31,7 @@ mock.module("@/lib/workspace/context", () => ({
 
 mock.module("@/lib/db/installations", () => ({
   getInstallationsForWorkspace: async () => installations,
+  listGitHubInstallationsForWorkspace: async () => workspaceRows,
 }));
 
 mock.module("@/lib/github/user-token", () => ({
@@ -54,6 +56,7 @@ describe("GET /api/github/connection-status", () => {
     authSession = { user: { id: "user-1" } };
     githubAccount = { username: "octocat" };
     installations = [{ installationId: 1 }];
+    workspaceRows = [{ installationId: 1 }];
     userToken = "ghu_user";
     syncedInstallationsCount = 1;
     syncError = null;
@@ -73,6 +76,7 @@ describe("GET /api/github/connection-status", () => {
   test("returns not_connected when no GitHub account is linked", async () => {
     githubAccount = null;
     installations = [];
+    workspaceRows = [];
     const { GET } = await routeModulePromise;
 
     const response = await GET();
@@ -83,6 +87,29 @@ describe("GET /api/github/connection-status", () => {
       reason: null,
       hasInstallations: false,
       syncedInstallationsCount: 0,
+      workspaceGithubAppInstalled: false,
+      workspaceInstallationCount: 0,
+      userGithubLinked: false,
+    });
+  });
+
+  test("returns connected when workspace has GitHub App but user has no linked account", async () => {
+    githubAccount = null;
+    installations = [];
+    workspaceRows = [{ installationId: 99 }];
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "connected",
+      reason: null,
+      hasInstallations: false,
+      syncedInstallationsCount: 0,
+      workspaceGithubAppInstalled: true,
+      workspaceInstallationCount: 1,
+      userGithubLinked: false,
     });
   });
 
@@ -98,6 +125,9 @@ describe("GET /api/github/connection-status", () => {
       reason: "token_unavailable",
       hasInstallations: true,
       syncedInstallationsCount: null,
+      workspaceGithubAppInstalled: true,
+      workspaceInstallationCount: 1,
+      userGithubLinked: true,
     });
   });
 
@@ -113,6 +143,9 @@ describe("GET /api/github/connection-status", () => {
       reason: "installations_missing",
       hasInstallations: false,
       syncedInstallationsCount: 0,
+      workspaceGithubAppInstalled: true,
+      workspaceInstallationCount: 1,
+      userGithubLinked: true,
     });
   });
 
@@ -128,6 +161,9 @@ describe("GET /api/github/connection-status", () => {
       reason: null,
       hasInstallations: true,
       syncedInstallationsCount: 2,
+      workspaceGithubAppInstalled: true,
+      workspaceInstallationCount: 1,
+      userGithubLinked: true,
     });
   });
 
@@ -144,6 +180,9 @@ describe("GET /api/github/connection-status", () => {
       reason: null,
       hasInstallations: false,
       syncedInstallationsCount: 0,
+      workspaceGithubAppInstalled: true,
+      workspaceInstallationCount: 1,
+      userGithubLinked: true,
     });
   });
 
@@ -160,6 +199,9 @@ describe("GET /api/github/connection-status", () => {
       reason: "sync_auth_failed",
       hasInstallations: true,
       syncedInstallationsCount: null,
+      workspaceGithubAppInstalled: true,
+      workspaceInstallationCount: 1,
+      userGithubLinked: true,
     });
   });
 });

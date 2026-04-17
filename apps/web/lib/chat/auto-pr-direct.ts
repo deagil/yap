@@ -11,7 +11,7 @@ import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
 } from "@/lib/github/repo-identifiers";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 import { generatePullRequestContentFromSandbox } from "@/lib/git/pr-content";
 
 const SAFE_BRANCH_PATTERN = /^[\w\-/.]+$/;
@@ -19,6 +19,8 @@ const SAFE_BRANCH_PATTERN = /^[\w\-/.]+$/;
 export interface AutoCreatePrParams {
   sandbox: Sandbox;
   userId: string;
+  workspaceId: string;
+  sessionInstallationId?: number | null;
   sessionId: string;
   sessionTitle: string;
   repoOwner: string;
@@ -98,8 +100,16 @@ async function findExistingOpenPullRequest(params: {
 export async function performAutoCreatePr(
   params: AutoCreatePrParams,
 ): Promise<AutoCreatePrResult> {
-  const { sandbox, userId, sessionId, sessionTitle, repoOwner, repoName } =
-    params;
+  const {
+    sandbox,
+    userId,
+    workspaceId,
+    sessionInstallationId,
+    sessionId,
+    sessionTitle,
+    repoOwner,
+    repoName,
+  } = params;
   const cwd = sandbox.workingDirectory;
 
   const branchResult = await sandbox.exec(
@@ -137,7 +147,14 @@ export async function performAutoCreatePr(
     };
   }
 
-  const userToken = await getUserGitHubToken(userId);
+  const access = await getRepoAccessToken({
+    workspaceId,
+    repoOwner,
+    repoName,
+    userId,
+    sessionInstallationId,
+  });
+  const userToken = access?.token;
   if (!userToken) {
     return {
       created: false,

@@ -7,9 +7,10 @@ import {
   type SessionRecord,
 } from "@/app/api/sessions/_lib/session-context";
 import { getGitHubAccount } from "@/lib/db/accounts";
+import { getGithubAppBotGitIdentity } from "@/lib/github/app-auth";
 import { updateSession } from "@/lib/db/sessions";
 import { parseGitHubUrl } from "@/lib/github/client";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
   DEFAULT_SANDBOX_PORTS,
@@ -32,6 +33,7 @@ import {
   hasResumableSandboxState,
 } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 // import { buildDevelopmentDotenvFromVercelProject } from "@/lib/vercel/projects";
 // import { getUserVercelToken } from "@/lib/vercel/token";
 
@@ -129,26 +131,9 @@ export async function POST(req: Request) {
     return Response.json({ error: "Access denied" }, { status: 403 });
   }
 
-  const githubToken = await getUserGitHubToken(session.user.id);
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
 
-  if (repoUrl) {
-    const parsedRepo = parseGitHubUrl(repoUrl);
-    if (!parsedRepo) {
-      return Response.json(
-        { error: "Invalid GitHub repository URL" },
-        { status: 400 },
-      );
-    }
-
-    if (!githubToken) {
-      return Response.json(
-        { error: "Connect GitHub to access repositories" },
-        { status: 403 },
-      );
-    }
-  }
-
-  // Validate session ownership
+  // Validate session ownership (needed before GitHub token resolution for installation_id)
   let sessionRecord: SessionRecord | undefined;
   if (sessionId) {
     const sessionContext = await requireOwnedSession({
@@ -162,20 +147,68 @@ export async function POST(req: Request) {
     sessionRecord = sessionContext.sessionRecord;
   }
 
+  let githubToken: string | undefined;
+  if (repoUrl) {
+    if (!workspaceId) {
+      return Response.json({ error: "No workspace selected" }, { status: 400 });
+    }
+
+    const parsedRepo = parseGitHubUrl(repoUrl);
+    if (!parsedRepo) {
+      return Response.json(
+        { error: "Invalid GitHub repository URL" },
+        { status: 400 },
+      );
+    }
+
+    const access = await getRepoAccessToken({
+      workspaceId,
+      repoOwner: parsedRepo.owner,
+      repoName: parsedRepo.repo,
+      userId: session.user.id,
+      sessionInstallationId: sessionRecord?.installationId ?? null,
+    });
+    githubToken = access?.token ?? undefined;
+
+    if (!githubToken) {
+      return Response.json(
+        {
+          error:
+            "No GitHub access for this repository — connect GitHub or ask a workspace admin to allowlist the repo.",
+        },
+        { status: 403 },
+      );
+    }
+  }
+
   const sandboxName = sessionId ? getSessionSandboxName(sessionId) : undefined;
   const githubAccount = await getGitHubAccount(session.user.id);
+  const botIdentity = await getGithubAppBotGitIdentity();
   const githubNoreplyEmail =
     githubAccount?.externalUserId && githubAccount.username
       ? `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`
       : undefined;
 
-  const gitUser = {
-    name: session.user.name ?? githubAccount?.username ?? session.user.username,
-    email:
-      githubNoreplyEmail ??
-      session.user.email ??
-      `${session.user.username}@users.noreply.github.com`,
-  };
+  const gitUser =
+    githubAccount?.externalUserId && githubAccount.username
+      ? {
+          name:
+            session.user.name ??
+            githubAccount.username ??
+            session.user.username,
+          email:
+            githubNoreplyEmail ??
+            session.user.email ??
+            `${session.user.username}@users.noreply.github.com`,
+        }
+      : botIdentity
+        ? { name: botIdentity.name, email: botIdentity.email }
+        : {
+            name: session.user.name ?? session.user.username,
+            email:
+              session.user.email ??
+              `${session.user.username}@users.noreply.github.com`,
+          };
 
   // ============================================
   // CREATE OR RESUME: Create a named persistent sandbox for this session.

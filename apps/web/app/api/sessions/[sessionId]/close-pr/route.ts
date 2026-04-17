@@ -4,7 +4,7 @@ import {
 } from "@/app/api/sessions/_lib/session-context";
 import { updateSession } from "@/lib/db/sessions";
 import { closePullRequest } from "@/lib/github/client";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -64,7 +64,14 @@ export async function POST(_req: Request, context: RouteContext) {
     } satisfies ClosePullRequestResponse);
   }
 
-  const token = await getUserGitHubToken(authResult.userId);
+  const access = await getRepoAccessToken({
+    workspaceId: sessionRecord.workspaceId,
+    repoOwner: sessionRecord.repoOwner,
+    repoName: sessionRecord.repoName,
+    userId: authResult.userId,
+    sessionInstallationId: sessionRecord.installationId,
+  });
+  const token = access?.token;
   if (!token) {
     return Response.json(
       { error: "No GitHub token available for this repository" },

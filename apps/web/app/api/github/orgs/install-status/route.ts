@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { getInstallationsByUserId } from "@/lib/db/installations";
+import {
+  getInstallationsByUserId,
+  listGitHubInstallationsForWorkspace,
+} from "@/lib/db/installations";
 import { isGitHubAppConfigured } from "@/lib/github/app-auth";
 import { getInstallationManageUrl } from "@/lib/github/installation-url";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 interface GitHubOrg {
   id: number;
@@ -34,6 +38,14 @@ export interface OrgInstallStatus {
   repositorySelection: "all" | "selected" | null;
 }
 
+export interface WorkspaceGitHubInstallSummary {
+  accountLogin: string;
+  installationId: number;
+  accountType: "User" | "Organization";
+  repositorySelection: "all" | "selected";
+  installationUrl: string | null;
+}
+
 export interface ConnectionStatusResponse {
   user: GitHubUserProfile;
   /** Whether the user's personal account has the app installed */
@@ -43,6 +55,9 @@ export interface ConnectionStatusResponse {
   orgs: OrgInstallStatus[];
   /** True when the GitHub token is expired and the data is from the DB cache */
   tokenExpired?: boolean;
+  /** Workspace-level GitHub App installs (any member; not tied to OAuth sync). */
+  workspaceGithubAppInstalled?: boolean;
+  workspaceInstallations?: WorkspaceGitHubInstallSummary[];
 }
 
 export async function GET() {
@@ -57,6 +72,21 @@ export async function GET() {
       { status: 500 },
     );
   }
+
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  const workspaceRows = workspaceId
+    ? await listGitHubInstallationsForWorkspace(workspaceId)
+    : [];
+  const workspaceFields = {
+    workspaceGithubAppInstalled: workspaceRows.length > 0,
+    workspaceInstallations: workspaceRows.map((i) => ({
+      accountLogin: i.accountLogin,
+      installationId: i.installationId,
+      accountType: i.accountType,
+      repositorySelection: i.repositorySelection,
+      installationUrl: i.installationUrl,
+    })),
+  };
 
   const token = await getUserGitHubToken();
   console.log("install-status: token resolved", {
@@ -120,6 +150,7 @@ export async function GET() {
         personalInstallation?.repositorySelection ?? null,
       orgs,
       tokenExpired: true,
+      ...workspaceFields,
     };
     return NextResponse.json(response);
   }
@@ -245,6 +276,7 @@ export async function GET() {
       personalRepositorySelection:
         personalInstallation?.repositorySelection ?? null,
       orgs,
+      ...workspaceFields,
     };
     return NextResponse.json(response);
   } catch (error) {

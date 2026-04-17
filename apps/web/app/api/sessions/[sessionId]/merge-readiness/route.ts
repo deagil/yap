@@ -7,7 +7,7 @@ import {
   type PullRequestCheckRun,
   type PullRequestMergeMethod,
 } from "@/lib/github/client";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -146,7 +146,24 @@ export async function GET(_req: Request, context: RouteContext) {
     );
   }
 
-  const token = await getUserGitHubToken(authResult.userId);
+  if (!sessionRecord.repoOwner || !sessionRecord.repoName) {
+    return Response.json(
+      buildUnavailableResponse(
+        "Session is missing repository metadata",
+        sessionRecord.prNumber,
+        repoIdentifier,
+      ) satisfies MergeReadinessResponse,
+    );
+  }
+
+  const access = await getRepoAccessToken({
+    workspaceId: sessionRecord.workspaceId,
+    repoOwner: sessionRecord.repoOwner,
+    repoName: sessionRecord.repoName,
+    userId: authResult.userId,
+    sessionInstallationId: sessionRecord.installationId,
+  });
+  const token = access?.token;
   if (!token) {
     return Response.json(
       buildUnavailableResponse(

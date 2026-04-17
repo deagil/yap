@@ -93,6 +93,8 @@ export function mapSession(r: Record<string, unknown>): Session {
     linesRemoved: r.lines_removed != null ? Number(r.lines_removed) : null,
     prNumber: r.pr_number != null ? Number(r.pr_number) : null,
     prStatus: r.pr_status as Session["prStatus"],
+    installationId:
+      r.installation_id != null ? Number(r.installation_id) : null,
     snapshotUrl: (r.snapshot_url as string | null) ?? null,
     snapshotCreatedAt: toDate(r.snapshot_created_at as string | null),
     snapshotSizeBytes:
@@ -138,6 +140,7 @@ export function sessionToDb(
     lines_removed: data.linesRemoved,
     pr_number: data.prNumber,
     pr_status: data.prStatus,
+    installation_id: data.installationId ?? null,
     snapshot_url: data.snapshotUrl,
     snapshot_created_at: data.snapshotCreatedAt?.toISOString() ?? null,
     snapshot_size_bytes: data.snapshotSizeBytes,

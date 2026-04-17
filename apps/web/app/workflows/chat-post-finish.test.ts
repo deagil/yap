@@ -422,6 +422,7 @@ describe("runAutoCommitStep", () => {
   test("connects sandbox and performs auto-commit", async () => {
     await runAutoCommitStep({
       userId: "user-1",
+      workspaceId: "ws-1",
       sessionId: "session-1",
       sessionTitle: "My session",
       repoOwner: "acme",
@@ -434,6 +435,7 @@ describe("runAutoCommitStep", () => {
     expect(spies.performAutoCommit).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",
+        workspaceId: "ws-1",
         sessionId: "session-1",
         sessionTitle: "My session",
         repoOwner: "acme",
@@ -449,6 +451,7 @@ describe("runAutoCommitStep", () => {
 
     await runAutoCommitStep({
       userId: "user-1",
+      workspaceId: "ws-1",
       sessionId: "session-1",
       sessionTitle: "My session",
       repoOwner: "acme",
@@ -462,6 +465,7 @@ describe("runAutoCreatePrStep", () => {
   test("connects sandbox and performs auto PR creation", async () => {
     await runAutoCreatePrStep({
       userId: "user-1",
+      workspaceId: "ws-1",
       sessionId: "session-1",
       sessionTitle: "My session",
       repoOwner: "acme",
@@ -474,6 +478,7 @@ describe("runAutoCreatePrStep", () => {
     expect(spies.performAutoCreatePr).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-1",
+        workspaceId: "ws-1",
         sessionId: "session-1",
         sessionTitle: "My session",
         repoOwner: "acme",
@@ -489,6 +494,7 @@ describe("runAutoCreatePrStep", () => {
 
     await runAutoCreatePrStep({
       userId: "user-1",
+      workspaceId: "ws-1",
       sessionId: "session-1",
       sessionTitle: "My session",
       repoOwner: "acme",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getInstallationToken } from "@/lib/github/app-auth";
 
 const INSTALLATION_REPOS_MAX_PAGES = 20;
 
@@ -110,6 +111,97 @@ export async function listUserInstallationRepositories({
     const parsed = installationReposResponseSchema.safeParse(json);
     if (!parsed.success) {
       throw new Error("Invalid GitHub user installation repositories response");
+    }
+
+    if (parsed.data.repositories.length === 0) {
+      break;
+    }
+
+    const pageMatches = parsed.data.repositories.filter((repo) => {
+      const matchesOwner = ownerFilter
+        ? repo.owner.login.toLowerCase() === ownerFilter
+        : true;
+
+      const matchesQuery = queryFilter
+        ? repo.name.toLowerCase().includes(queryFilter)
+        : true;
+
+      return matchesOwner && matchesQuery;
+    });
+
+    matchedRepos.push(...pageMatches);
+
+    if (matchedRepos.length >= normalizedLimit) {
+      break;
+    }
+
+    if (parsed.data.repositories.length < perPage) {
+      break;
+    }
+  }
+
+  matchedRepos.sort(compareRepositoriesByRecentActivity);
+
+  return matchedRepos.slice(0, normalizedLimit).map((repo) => ({
+    name: repo.name,
+    full_name: repo.full_name,
+    description: repo.description,
+    private: repo.private,
+    clone_url: repo.clone_url,
+    updated_at: repo.updated_at,
+    language: repo.language,
+  }));
+}
+
+/**
+ * List repositories accessible to the GitHub App installation (server-to-server).
+ * Does not require a user OAuth token.
+ */
+export async function listInstallationRepositoriesForApp({
+  installationId,
+  owner,
+  query,
+  limit,
+}: {
+  installationId: number;
+  owner?: string;
+  query?: string;
+  limit?: number;
+}): Promise<InstallationRepository[]> {
+  const token = await getInstallationToken(installationId);
+  const ownerFilter = owner?.trim().toLowerCase();
+  const queryFilter = query?.trim().toLowerCase();
+  const normalizedLimit = normalizeLimit(limit);
+
+  const perPage = 50;
+  const maxPages = INSTALLATION_REPOS_MAX_PAGES;
+  const matchedRepos: z.infer<typeof installationRepoSchema>[] = [];
+
+  for (let page = 1; page <= maxPages; page++) {
+    const endpoint = new URL(
+      "https://api.github.com/installation/repositories",
+    );
+    endpoint.searchParams.set("per_page", `${perPage}`);
+    endpoint.searchParams.set("page", `${page}`);
+
+    const response = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        `Failed to fetch installation repositories: ${response.status} ${body}`,
+      );
+    }
+
+    const json = await response.json();
+    const parsed = installationReposResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new Error("Invalid GitHub installation repositories response");
     }
 
     if (parsed.data.repositories.length === 0) {

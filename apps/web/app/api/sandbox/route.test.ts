@@ -88,6 +88,21 @@ mock.module("@/lib/github/user-token", () => ({
   getUserGitHubToken: async () => currentGitHubToken,
 }));
 
+mock.module("@/lib/workspace/context", () => ({
+  getActiveWorkspaceIdForUser: async () => "ws-test",
+}));
+
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: async () =>
+    currentGitHubToken
+      ? {
+          token: currentGitHubToken,
+          source: "user" as const,
+          installationId: null,
+        }
+      : null,
+}));
+
 mock.module("@/lib/vercel/token", () => ({
   getWorkspaceVercelAuthInfo: async () => currentVercelAuthInfo,
   getWorkspaceVercelToken: async () => currentVercelAuthInfo?.token ?? null,

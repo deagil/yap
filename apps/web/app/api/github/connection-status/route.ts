@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { getInstallationsForWorkspace } from "@/lib/db/installations";
+import {
+  getInstallationsForWorkspace,
+  listGitHubInstallationsForWorkspace,
+} from "@/lib/db/installations";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/connection-status";
 import {
   isGitHubInstallationsAuthError,
@@ -22,17 +25,27 @@ export async function GET() {
     return NextResponse.json({ error: "No workspace" }, { status: 400 });
   }
 
-  const [ghAccount, installations] = await Promise.all([
+  const [ghAccount, installations, workspaceInstallations] = await Promise.all([
     getGitHubAccount(session.user.id),
     getInstallationsForWorkspace(workspaceId, session.user.id),
+    listGitHubInstallationsForWorkspace(workspaceId),
   ]);
+
+  const workspaceFields = {
+    workspaceGithubAppInstalled: workspaceInstallations.length > 0,
+    workspaceInstallationCount: workspaceInstallations.length,
+    userGithubLinked: ghAccount !== null,
+  };
 
   if (!ghAccount) {
     return NextResponse.json({
-      status: "not_connected",
+      status: workspaceFields.workspaceGithubAppInstalled
+        ? "connected"
+        : "not_connected",
       reason: null,
       hasInstallations: installations.length > 0,
       syncedInstallationsCount: installations.length,
+      ...workspaceFields,
     } satisfies GitHubConnectionStatusResponse);
   }
 
@@ -43,6 +56,7 @@ export async function GET() {
       reason: "token_unavailable",
       hasInstallations: installations.length > 0,
       syncedInstallationsCount: null,
+      ...workspaceFields,
     } satisfies GitHubConnectionStatusResponse);
   }
 
@@ -61,6 +75,7 @@ export async function GET() {
       reason: reconnectRequired ? "installations_missing" : null,
       hasInstallations: syncedInstallationsCount > 0,
       syncedInstallationsCount,
+      ...workspaceFields,
     } satisfies GitHubConnectionStatusResponse);
   } catch (error) {
     if (isGitHubInstallationsAuthError(error)) {
@@ -69,6 +84,7 @@ export async function GET() {
         reason: "sync_auth_failed",
         hasInstallations: installations.length > 0,
         syncedInstallationsCount: null,
+        ...workspaceFields,
       } satisfies GitHubConnectionStatusResponse);
     }
 
@@ -79,6 +95,7 @@ export async function GET() {
       reason: null,
       hasInstallations: installations.length > 0,
       syncedInstallationsCount: installations.length,
+      ...workspaceFields,
     } satisfies GitHubConnectionStatusResponse);
   }
 }

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchGitHubBranches } from "@/lib/github/api";
 import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 interface RepoInfo {
   default_branch: string;
@@ -286,7 +288,22 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const token = await getUserGitHubToken(session.user.id);
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
+  let token: string | null = null;
+  if (workspaceId) {
+    token =
+      (
+        await getRepoAccessToken({
+          workspaceId,
+          repoOwner: owner,
+          repoName: repo,
+          userId: session.user.id,
+        })
+      )?.token ?? null;
+  }
+  if (!token) {
+    token = await getUserGitHubToken(session.user.id);
+  }
 
   try {
     if (token) {

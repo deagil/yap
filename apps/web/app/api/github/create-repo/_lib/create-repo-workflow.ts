@@ -1,7 +1,11 @@
 import type { Sandbox } from "@open-harness/sandbox";
 import { gateway, generateText } from "ai";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { getAppCoAuthorTrailer } from "@/lib/github/app-auth";
+import {
+  getAppCoAuthorTrailer,
+  getGithubAppBotGitIdentity,
+} from "@/lib/github/app-auth";
+import { getMemberCoAuthorTrailer } from "@/lib/git/member-co-author";
 import { createRepository } from "@/lib/github/client";
 
 // Escape shell metacharacters to prevent command injection
@@ -124,16 +128,23 @@ export async function runCreateRepoWorkflow({
 
   // 9. Configure git user (in case not already configured)
   const githubAccount = await getGitHubAccount(sessionUser.id);
+  const botIdentity = await getGithubAppBotGitIdentity();
   const githubNoreplyEmail =
     githubAccount?.externalUserId && githubAccount.username
       ? `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`
       : undefined;
   const userName =
-    sessionUser.name ?? githubAccount?.username ?? sessionUser.username;
+    githubAccount?.externalUserId && githubAccount.username
+      ? (sessionUser.name ?? githubAccount.username ?? sessionUser.username)
+      : botIdentity
+        ? botIdentity.name
+        : (sessionUser.name ?? sessionUser.username);
   const userEmail =
     githubNoreplyEmail ??
-    sessionUser.email ??
-    `${sessionUser.username}@users.noreply.github.com`;
+    (botIdentity
+      ? botIdentity.email
+      : (sessionUser.email ??
+        `${sessionUser.username}@users.noreply.github.com`));
 
   await sandbox.exec(
     `git config user.name ${escapeShellArg(userName)}`,
@@ -213,12 +224,21 @@ Respond with ONLY the commit message, nothing else.`,
     commitMessage = "feat: initial commit";
   }
 
-  // 13. Create commit with Co-Authored-By trailer for the agent app
+  // 13. Create commit with Co-Authored-By trailers (agent; member when committer is app bot)
   const escapedMessage = commitMessage.replace(/'/g, "'\\''");
   const coAuthorTrailer = await getAppCoAuthorTrailer();
-  const trailerArg = coAuthorTrailer
-    ? ` -m '${coAuthorTrailer.replace(/'/g, "'\\''")}'`
-    : "";
+  const memberTrailer = await getMemberCoAuthorTrailer(sessionUser.id);
+
+  const shellQuoteTrailer = (t: string) => ` -m '${t.replace(/'/g, "'\\''")}'`;
+
+  let trailerArg = "";
+  if (githubAccount?.externalUserId && githubAccount.username) {
+    trailerArg = coAuthorTrailer ? shellQuoteTrailer(coAuthorTrailer) : "";
+  } else {
+    const parts = [coAuthorTrailer, memberTrailer].filter(Boolean) as string[];
+    trailerArg = parts.map(shellQuoteTrailer).join("");
+  }
+
   const commitResult = await sandbox.exec(
     `git commit -m '${escapedMessage}'${trailerArg}`,
     cwd,

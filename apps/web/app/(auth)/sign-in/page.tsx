@@ -1,16 +1,24 @@
-import { Suspense } from "react";
-import { SignInClient } from "./sign-in-client";
+import { redirect } from "next/navigation";
+import { getServerSession } from "@/lib/session/get-server-session";
+import { AuthFlowClient } from "../auth-flow-client";
 
-export default function SignInPage() {
+export default async function SignInPage() {
+  const session = await getServerSession();
+  if (session?.user) {
+    if (session.user.onboardingComplete === false) {
+      redirect("/onboarding");
+    }
+    redirect("/sessions");
+  }
+
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
-          Loading…
-        </div>
-      }
-    >
-      <SignInClient />
-    </Suspense>
+    <AuthFlowClient
+      startAuthenticated={false}
+      profileSaved={false}
+      githubConnected={false}
+      vercelConnected={false}
+      defaultDisplayName=""
+      defaultWorkspaceName=""
+    />
   );
 }

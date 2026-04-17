@@ -6,6 +6,8 @@ type AuthSession = { user: { id: string } } | null;
 type SessionRecord = {
   id: string;
   userId: string;
+  workspaceId: string;
+  installationId: number | null;
   cloneUrl: string | null;
   repoOwner: string | null;
   repoName: string | null;
@@ -17,6 +19,8 @@ let authSession: AuthSession = { user: { id: "user-1" } };
 let sessionRecord: SessionRecord | null = {
   id: "session-1",
   userId: "user-1",
+  workspaceId: "ws-1",
+  installationId: null,
   cloneUrl: "https://github.com/acme/rocket.git",
   repoOwner: "acme",
   repoName: "rocket",
@@ -132,8 +136,12 @@ function registerRouteMocks() {
     },
   }));
 
-  mock.module("@/lib/github/user-token", () => ({
-    getUserGitHubToken: async () => "token-123",
+  mock.module("@/lib/github/workspace-token", () => ({
+    getRepoAccessToken: async () => ({
+      token: "token-123",
+      source: "user" as const,
+      installationId: null,
+    }),
   }));
 
   mock.module("@/lib/github/client", () => ({
@@ -168,6 +176,8 @@ describe("/api/sessions/[sessionId]/merge", () => {
     sessionRecord = {
       id: "session-1",
       userId: "user-1",
+      workspaceId: "ws-1",
+      installationId: null,
       cloneUrl: "https://github.com/acme/rocket.git",
       repoOwner: "acme",
       repoName: "rocket",

@@ -119,6 +119,78 @@ function SkeletonRow() {
   );
 }
 
+function AllowlistRepoSelector({
+  repos,
+  selectedOwner,
+  selectedRepo,
+  onSelect,
+}: {
+  repos: { repoOwner: string; repoName: string }[];
+  selectedOwner: string;
+  selectedRepo: string;
+  onSelect: (owner: string, repo: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasSelection = Boolean(selectedOwner && selectedRepo);
+
+  if (hasSelection) {
+    return (
+      <div className="flex items-center gap-0 overflow-hidden rounded-lg border border-border/70 dark:border-white/10">
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2.5">
+          <GitHubIcon className="size-4 shrink-0" />
+          <span className="truncate text-sm font-medium">
+            {selectedOwner}/{selectedRepo}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onSelect(selectedOwner, "")}
+          className="shrink-0 px-3 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/80 px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+        >
+          <span className="text-muted-foreground">Choose repository…</span>
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(100vw-2rem,380px)] p-0" align="start">
+        <Command>
+          <CommandList className="max-h-[min(60vh,320px)]">
+            <CommandGroup heading="Allowed repositories">
+              {repos.map((r) => (
+                <CommandItem
+                  key={`${r.repoOwner}/${r.repoName}`}
+                  value={`${r.repoOwner}/${r.repoName}`}
+                  onSelect={() => {
+                    onSelect(r.repoOwner, r.repoName);
+                    setOpen(false);
+                  }}
+                >
+                  <GitHubIcon className="size-3.5" />
+                  <span className="truncate">
+                    {r.repoOwner}/{r.repoName}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function GitHubActionCard({
   title,
   description,
@@ -175,6 +247,20 @@ export function RepoSelectorCompact({
   const startGitHubReconnect = useCallback(() => {
     window.location.href = buildGitHubReconnectUrl(getCurrentPathWithSearch());
   }, []);
+
+  const { data: allowlistPayload } = useSWR<{
+    allowlistEnabled: boolean;
+    repos: { repoOwner: string; repoName: string }[];
+  }>("workspace-allowed-repos", async () => {
+    const res = await fetch("/api/workspace/allowed-repos");
+    if (!res.ok) {
+      throw new Error("allowed-repos");
+    }
+    return res.json() as Promise<{
+      allowlistEnabled: boolean;
+      repos: { repoOwner: string; repoName: string }[];
+    }>;
+  });
 
   const { data: installations = [], isLoading: installationsLoading } = useSWR<
     Installation[]
@@ -266,6 +352,21 @@ export function RepoSelectorCompact({
 
   const isInitialLoading = installationsLoading && installations.length === 0;
   const hasSelection = selectedOwner && selectedRepo;
+
+  const useAllowlistOnly =
+    allowlistPayload?.allowlistEnabled === true &&
+    (allowlistPayload.repos?.length ?? 0) > 0;
+
+  if (useAllowlistOnly && allowlistPayload) {
+    return (
+      <AllowlistRepoSelector
+        repos={allowlistPayload.repos}
+        selectedOwner={selectedOwner}
+        selectedRepo={selectedRepo}
+        onSelect={onSelect}
+      />
+    );
+  }
 
   // Not connected to GitHub
   if (!sessionLoading && !hasGitHub) {

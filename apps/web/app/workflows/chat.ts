@@ -56,6 +56,8 @@ type Options = {
   repoOwner?: string;
   /** GitHub repo name (required for auto-commit). */
   repoName?: string;
+  /** Session denormalized GitHub App installation id for workspace token. */
+  sessionInstallationId?: number | null;
 };
 
 type Writable = WritableStream<UIMessageChunk>;
@@ -635,6 +637,8 @@ export async function runAgentWorkflow(options: Options) {
       autoCommitResult = hasAutoCommitChanges
         ? await runAutoCommitStep({
             userId: options.userId,
+            workspaceId: options.workspaceId,
+            sessionInstallationId: options.sessionInstallationId,
             sessionId: options.sessionId,
             sessionTitle: options.sessionTitle ?? "",
             repoOwner,
@@ -681,6 +685,8 @@ export async function runAgentWorkflow(options: Options) {
 
         const autoPrResult = await runAutoCreatePrStep({
           userId: options.userId,
+          workspaceId: options.workspaceId,
+          sessionInstallationId: options.sessionInstallationId,
           sessionId: options.sessionId,
           sessionTitle: options.sessionTitle ?? "",
           repoOwner,

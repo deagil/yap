@@ -71,7 +71,15 @@ const createPullRequestSpy = mock(async () => createPullRequestResult);
 const generatePullRequestContentFromSandboxSpy = mock(
   async () => prContentResult,
 );
-const getUserGitHubTokenSpy = mock(async (_userId?: string) => userTokenResult);
+const getRepoAccessTokenSpy = mock(async () =>
+  userTokenResult
+    ? {
+        token: userTokenResult,
+        source: "user" as const,
+        installationId: null,
+      }
+    : null,
+);
 
 const sandbox = {
   workingDirectory: "/vercel/sandbox",
@@ -90,8 +98,8 @@ mock.module("@/lib/github/api", () => ({
   fetchGitHubBranches: fetchGitHubBranchesSpy,
 }));
 
-mock.module("@/lib/github/user-token", () => ({
-  getUserGitHubToken: getUserGitHubTokenSpy,
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: getRepoAccessTokenSpy,
 }));
 
 mock.module("@/lib/github/client", () => ({
@@ -133,6 +141,7 @@ function makeParams() {
   return {
     sandbox: sandbox as never,
     userId: "user-1",
+    workspaceId: "ws-1",
     sessionId: "session-1",
     sessionTitle: "Auto PR session",
     repoOwner: "acme",
@@ -147,7 +156,7 @@ beforeEach(() => {
   findPullRequestByBranchSpy.mockClear();
   createPullRequestSpy.mockClear();
   generatePullRequestContentFromSandboxSpy.mockClear();
-  getUserGitHubTokenSpy.mockClear();
+  getRepoAccessTokenSpy.mockClear();
 
   execResults = defaultExecResults();
   userTokenResult = "ghp_user";
@@ -295,7 +304,7 @@ describe("performAutoCreatePr", () => {
       prNumber: 42,
       prUrl: "https://github.com/acme/repo/pull/42",
     } satisfies AutoCreatePrResult);
-    expect(getUserGitHubTokenSpy).toHaveBeenCalledWith("user-1");
+    expect(getRepoAccessTokenSpy).toHaveBeenCalled();
     expect(generatePullRequestContentFromSandboxSpy).toHaveBeenCalledTimes(1);
     expect(createPullRequestSpy).toHaveBeenCalledWith(
       expect.objectContaining({

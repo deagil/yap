@@ -14,6 +14,8 @@ type AuthSession = {
 type SessionRecord = {
   id: string;
   userId: string;
+  workspaceId: string;
+  installationId: number | null;
   cloneUrl: string | null;
   sandboxState: { type: "vercel" } | null;
 };
@@ -79,6 +81,19 @@ mock.module("@/lib/github/user-token", () => ({
   getUserGitHubToken: async () => userToken,
 }));
 
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: async (params: { repoOwner?: string }) => {
+    if (params.repoOwner === "acme-org") {
+      return {
+        token: "inst-token",
+        source: "installation" as const,
+        installationId: 42,
+      };
+    }
+    return null;
+  },
+}));
+
 mock.module("@/lib/sandbox/utils", () => ({
   isSandboxActive: () => sandboxActive,
 }));
@@ -126,6 +141,8 @@ describe("/api/github/create-repo", () => {
     sessionRecord = {
       id: "session-1",
       userId: "user-1",
+      workspaceId: "ws-1",
+      installationId: null,
       cloneUrl: null,
       sandboxState: { type: "vercel" },
     };
@@ -257,7 +274,28 @@ describe("/api/github/create-repo", () => {
     expect(workflowCalls[0]).toMatchObject({
       owner: "acme-org",
       accountType: "Organization",
-      repoToken: "user-token",
+      repoToken: "inst-token",
+    });
+  });
+
+  test("creates under an org using installation token when user OAuth is unavailable", async () => {
+    userToken = null;
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createRequest({
+        sessionId: "session-1",
+        repoName: "repo-1",
+        sessionTitle: "Session",
+        owner: "acme-org",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(workflowCalls[0]).toMatchObject({
+      owner: "acme-org",
+      accountType: "Organization",
+      repoToken: "inst-token",
     });
   });
 });

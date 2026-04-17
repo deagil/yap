@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 const currentSessionRecord = {
   userId: "user-1",
+  workspaceId: "ws-1",
+  installationId: null as number | null,
   repoOwner: "vercel",
   repoName: "open-harness",
   branch: "feature/preview",
@@ -32,6 +36,11 @@ const findLatestFailedDeploymentInspectorUrlForBranchMock = mock(
   async () => currentFailedDeploymentInspectorUrl,
 );
 const getUserGitHubTokenMock = mock(async () => "repo-token");
+const getRepoAccessTokenMock = mock(async () => ({
+  token: "repo-token",
+  source: "user" as const,
+  installationId: null,
+}));
 const findLatestVercelDeploymentUrlForPullRequestMock = mock(
   async () => currentPullRequestDeploymentResult,
 );
@@ -62,6 +71,10 @@ mock.module("@/lib/vercel/projects", () => ({
 
 mock.module("@/lib/github/user-token", () => ({
   getUserGitHubToken: getUserGitHubTokenMock,
+}));
+
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: getRepoAccessTokenMock,
 }));
 
 mock.module("@/lib/github/client", () => ({
@@ -95,6 +108,7 @@ describe("/api/sessions/[sessionId]/pr-deployment", () => {
     findLatestBuildingDeploymentUrlForBranchMock.mockClear();
     findLatestFailedDeploymentInspectorUrlForBranchMock.mockClear();
     getUserGitHubTokenMock.mockClear();
+    getRepoAccessTokenMock.mockClear();
     findLatestVercelDeploymentUrlForPullRequestMock.mockClear();
   });
 
@@ -215,7 +229,7 @@ describe("/api/sessions/[sessionId]/pr-deployment", () => {
     expect(findLatestPreviewDeploymentUrlForBranchMock).toHaveBeenCalledTimes(
       0,
     );
-    expect(getUserGitHubTokenMock).toHaveBeenCalledTimes(1);
+    expect(getRepoAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(
       findLatestVercelDeploymentUrlForPullRequestMock,
     ).toHaveBeenCalledWith({

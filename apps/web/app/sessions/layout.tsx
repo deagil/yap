@@ -22,6 +22,10 @@ export default async function SessionsLayout({
     redirect("/");
   }
 
+  if (session.user.onboardingComplete === false) {
+    redirect("/onboarding");
+  }
+
   const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
   if (!workspaceId) {
     redirect("/settings/workspace");

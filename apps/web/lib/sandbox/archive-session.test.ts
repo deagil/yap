@@ -5,6 +5,8 @@ mock.module("server-only", () => ({}));
 interface TestSessionRecord {
   id: string;
   userId: string;
+  workspaceId: string;
+  installationId: number | null;
   status: "running" | "archived";
   repoOwner: string | null;
   repoName: string | null;
@@ -131,6 +133,14 @@ mock.module("@/lib/github/user-token", () => ({
   getUserGitHubToken: spies.getUserGitHubToken,
 }));
 
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: async () => ({
+    token: "repo-token",
+    source: "user" as const,
+    installationId: null,
+  }),
+}));
+
 mock.module("@/lib/github/client", () => ({
   getPullRequestStatus: spies.getPullRequestStatus,
   findPullRequestByBranch: spies.findPullRequestByBranch,
@@ -144,6 +154,8 @@ function makeSessionRecord(
   return {
     id: "session-1",
     userId: "user-1",
+    workspaceId: "ws-1",
+    installationId: null,
     status: "running",
     repoOwner: "acme",
     repoName: "widgets",

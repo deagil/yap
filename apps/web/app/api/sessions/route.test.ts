@@ -7,6 +7,15 @@ mock.module("@/lib/workspace/context", () => ({
   getActiveWorkspaceIdForUser: async () => "workspace-1",
 }));
 
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: async () => ({
+    token: "gh-test-token",
+    source: "user" as const,
+    installationId: null,
+  }),
+  resolveInstallationIdForRepo: async () => null,
+}));
+
 let currentSession: {
   authProvider?: "vercel" | "github";
   user: {

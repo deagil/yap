@@ -5,6 +5,7 @@ import { getInstallationsForWorkspace } from "@/lib/db/installations";
 import { decrypt } from "@/lib/crypto";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getPublicAppOriginFromRequestUrl } from "@/lib/http/public-app-origin";
 import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
 function sanitizeRedirectTo(rawRedirectTo: string | null): string {
@@ -56,11 +57,12 @@ function redirectWithInstallCookies(
 
 export async function GET(req: NextRequest): Promise<Response> {
   const session = await getServerSession();
+  const publicOrigin = getPublicAppOriginFromRequestUrl(req.url);
 
   const redirectTo = sanitizeRedirectTo(req.nextUrl.searchParams.get("next"));
 
   if (!session?.user?.id) {
-    const signinUrl = new URL("/sign-in", req.url);
+    const signinUrl = new URL("/sign-in", publicOrigin);
     signinUrl.searchParams.set(
       "next",
       `${req.nextUrl.pathname}${req.nextUrl.search}`,
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
   if (!appSlug) {
-    const fallbackUrl = new URL(redirectTo, req.url);
+    const fallbackUrl = new URL(redirectTo, publicOrigin);
     fallbackUrl.searchParams.set("github", "app_not_configured");
     return NextResponse.redirect(fallbackUrl);
   }
@@ -96,7 +98,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       const authorizeUrl = new URL("https://github.com/login/oauth/authorize");
       authorizeUrl.searchParams.set("client_id", clientId);
       authorizeUrl.searchParams.set("state", state);
-      const callbackUrl = new URL("/api/github/app/callback", req.url);
+      const callbackUrl = new URL("/api/github/app/callback", publicOrigin);
       authorizeUrl.searchParams.set("redirect_uri", callbackUrl.toString());
       return redirectWithInstallCookies(authorizeUrl, redirectTo, state);
     }
@@ -110,7 +112,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
   if (!workspaceId) {
-    const fallbackUrl = new URL(redirectTo, req.url);
+    const fallbackUrl = new URL(redirectTo, publicOrigin);
     fallbackUrl.searchParams.set("github", "no_workspace");
     return NextResponse.redirect(fallbackUrl);
   }
@@ -178,7 +180,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const authorizeUrl = new URL("https://github.com/login/oauth/authorize");
   authorizeUrl.searchParams.set("client_id", clientId);
   authorizeUrl.searchParams.set("state", state);
-  const callbackUrl = new URL("/api/github/app/callback", req.url);
+  const callbackUrl = new URL("/api/github/app/callback", publicOrigin);
   authorizeUrl.searchParams.set("redirect_uri", callbackUrl.toString());
   return redirectWithInstallCookies(authorizeUrl, redirectTo, state);
 }

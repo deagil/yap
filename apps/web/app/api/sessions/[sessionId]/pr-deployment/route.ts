@@ -3,7 +3,7 @@ import {
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
 import { findLatestVercelDeploymentUrlForPullRequest } from "@/lib/github/client";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 import {
   findLatestBuildingDeploymentUrlForBranch,
   findLatestFailedDeploymentInspectorUrlForBranch,
@@ -111,7 +111,14 @@ export async function GET(req: Request, context: RouteContext) {
     } satisfies PrDeploymentResponse);
   }
 
-  const token = await getUserGitHubToken(authResult.userId);
+  const access = await getRepoAccessToken({
+    workspaceId: sessionRecord.workspaceId,
+    repoOwner: sessionRecord.repoOwner,
+    repoName: sessionRecord.repoName,
+    userId: authResult.userId,
+    sessionInstallationId: sessionRecord.installationId,
+  });
+  const token = access?.token;
   if (!token) {
     return Response.json({
       deploymentUrl: null,

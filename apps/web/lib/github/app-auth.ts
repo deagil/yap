@@ -92,6 +92,49 @@ export async function getAppCoAuthorTrailer(): Promise<string | null> {
   return cachedTrailer;
 }
 
+let cachedBotGitIdentity: { name: string; email: string } | null | undefined;
+
+/**
+ * Git author identity for the GitHub App bot (commits pushed with installation tokens).
+ */
+export async function getGithubAppBotGitIdentity(): Promise<{
+  name: string;
+  email: string;
+} | null> {
+  if (cachedBotGitIdentity !== undefined) {
+    return cachedBotGitIdentity;
+  }
+
+  const slug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
+  if (!slug) {
+    cachedBotGitIdentity = null;
+    return null;
+  }
+
+  const botName = `${slug}[bot]`;
+  let botUserId: number | null = null;
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/users/${encodeURIComponent(botName)}`,
+      { headers: { Accept: "application/vnd.github+json" } },
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { id?: number };
+      botUserId = data.id ?? null;
+    }
+  } catch {
+    // Fall back to email without numeric prefix
+  }
+
+  const botEmail = botUserId
+    ? `${botUserId}+${botName}@users.noreply.github.com`
+    : `${botName}@users.noreply.github.com`;
+
+  cachedBotGitIdentity = { name: botName, email: botEmail };
+  return cachedBotGitIdentity;
+}
+
 export async function getInstallationToken(
   installationId: number,
 ): Promise<string> {

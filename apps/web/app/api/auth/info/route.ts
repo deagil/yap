@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getGitHubAccount } from "@/lib/db/accounts";
-import { getInstallationsForWorkspace } from "@/lib/db/installations";
+import { listGitHubInstallationsForWorkspace } from "@/lib/db/installations";
 import { userExists } from "@/lib/db/users";
 import { getSessionFromReq } from "@/lib/session/server";
 import type { SessionUserInfo } from "@/lib/session/types";
@@ -19,11 +19,11 @@ export async function GET(req: NextRequest) {
   const supabase = await createServerSupabase();
   const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
 
-  const [exists, ghAccount, installations] = await Promise.all([
+  const [exists, ghAccount, workspaceInstallations] = await Promise.all([
     userExists(session.user.id, supabase),
     getGitHubAccount(session.user.id, supabase),
     workspaceId
-      ? getInstallationsForWorkspace(workspaceId, session.user.id, supabase)
+      ? listGitHubInstallationsForWorkspace(workspaceId, supabase)
       : Promise.resolve([]),
   ]);
 
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   const hasGitHubAccount = ghAccount !== null;
-  const hasGitHubInstallations = installations.length > 0;
+  const hasGitHubInstallations = workspaceInstallations.length > 0;
   const hasGitHub = hasGitHubAccount || hasGitHubInstallations;
 
   const data: SessionUserInfo = {

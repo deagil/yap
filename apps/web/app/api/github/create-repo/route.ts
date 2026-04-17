@@ -2,6 +2,7 @@ import { connectSandbox } from "@open-harness/sandbox";
 import { runCreateRepoWorkflow } from "@/app/api/github/create-repo/_lib/create-repo-workflow";
 import { getGitHubAccount } from "@/lib/db/accounts";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 import { getUserGitHubToken } from "@/lib/github/user-token";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -68,22 +69,50 @@ export async function POST(req: Request) {
     return Response.json({ error: "Sandbox not initialized" }, { status: 400 });
   }
 
-  // 4. Resolve GitHub OAuth token for repo creation
+  // 4. Resolve token: workspace installation for org targets; OAuth for personal accounts
   const githubAccount = await getGitHubAccount(session.user.id);
-  const repoToken = await getUserGitHubToken(session.user.id);
+  const githubUsername = githubAccount?.username?.trim().toLowerCase() ?? "";
+  const normalizedOwner = owner?.trim();
 
-  if (!repoToken) {
-    return Response.json({ error: "GitHub not connected" }, { status: 401 });
-  }
-
-  const githubUsername = githubAccount?.username?.trim();
   let accountType: "User" | "Organization" | undefined;
-
-  if (owner) {
+  if (normalizedOwner) {
     accountType =
-      githubUsername && owner.toLowerCase() === githubUsername.toLowerCase()
+      githubUsername && normalizedOwner.toLowerCase() === githubUsername
         ? "User"
         : "Organization";
+  }
+
+  let repoToken: string | null = null;
+
+  if (accountType === "Organization" && normalizedOwner) {
+    const access = await getRepoAccessToken({
+      workspaceId: sessionRecord.workspaceId,
+      repoOwner: normalizedOwner,
+      repoName: null,
+      userId: session.user.id,
+      sessionInstallationId: sessionRecord.installationId,
+      allowUnlistedTarget: true,
+    });
+    repoToken = access?.token ?? null;
+  }
+
+  if (!repoToken) {
+    const userToken = await getUserGitHubToken(session.user.id);
+    if (!userToken) {
+      return Response.json(
+        {
+          error:
+            accountType === "Organization"
+              ? "No GitHub access for this organization. Install the GitHub App on that org or link a GitHub account with permission."
+              : "GitHub not connected",
+        },
+        { status: 401 },
+      );
+    }
+    if (accountType !== "Organization" && !githubAccount) {
+      return Response.json({ error: "GitHub not connected" }, { status: 401 });
+    }
+    repoToken = userToken;
   }
 
   // 5. Connect to sandbox

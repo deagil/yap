@@ -132,6 +132,23 @@ export async function getInstallationsByUserId(
   return (data ?? []).map((r) => mapInstallation(r as Record<string, unknown>));
 }
 
+/** All GitHub App installation rows for a workspace (any member; RLS-scoped). */
+export async function listGitHubInstallationsForWorkspace(
+  workspaceId: string,
+  client?: SupabaseClient,
+): Promise<GitHubInstallation[]> {
+  const supabase = client ?? (await createServerSupabase());
+  const { data, error } = await supabase
+    .from("github_installations")
+    .select()
+    .eq("workspace_id", workspaceId)
+    .order("account_login", { ascending: true });
+  if (error) {
+    throw error;
+  }
+  return (data ?? []).map((r) => mapInstallation(r as Record<string, unknown>));
+}
+
 export async function getInstallationsForWorkspace(
   workspaceId: string,
   userId: string,
@@ -163,6 +180,46 @@ export async function getInstallationByAccountLogin(
     .eq("workspace_id", workspaceId)
     .eq("user_id", userId)
     .eq("account_login", accountLogin)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapInstallation(data as Record<string, unknown>) : undefined;
+}
+
+/**
+ * Resolve a workspace's GitHub App installation for an account (org or user)
+ * without filtering by the syncing user — use for workspace-level git/API.
+ */
+export async function getInstallationByWorkspaceAndAccountLogin(
+  workspaceId: string,
+  accountLogin: string,
+  client?: SupabaseClient,
+): Promise<GitHubInstallation | undefined> {
+  const supabase = client ?? (await createServerSupabase());
+  const { data, error } = await supabase
+    .from("github_installations")
+    .select()
+    .eq("workspace_id", workspaceId)
+    .ilike("account_login", accountLogin)
+    .maybeSingle();
+  if (error) {
+    throw error;
+  }
+  return data ? mapInstallation(data as Record<string, unknown>) : undefined;
+}
+
+export async function getInstallationByWorkspaceAndInstallationId(
+  workspaceId: string,
+  installationId: number,
+  client?: SupabaseClient,
+): Promise<GitHubInstallation | undefined> {
+  const supabase = client ?? (await createServerSupabase());
+  const { data, error } = await supabase
+    .from("github_installations")
+    .select()
+    .eq("workspace_id", workspaceId)
+    .eq("installation_id", installationId)
     .maybeSingle();
   if (error) {
     throw error;

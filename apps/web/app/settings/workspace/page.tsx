@@ -59,13 +59,12 @@ export default async function WorkspaceSettingsPage() {
       <section className="space-y-3 rounded-lg border border-border p-6">
         <h2 className="font-medium">Integrations</h2>
         <p className="text-muted-foreground text-sm">
-          Connect Vercel for preview URLs and project listing. Requires owner or
-          admin on the active workspace.
+          GitHub App, Vercel, and Slack are configured under Connections for
+          your active workspace (install, reconnect, and open provider
+          dashboards).
         </p>
         <Button asChild variant="secondary">
-          <Link href="/api/integrations/vercel/start?next=/settings/workspace">
-            Connect Vercel
-          </Link>
+          <Link href="/settings/connections">Open Connections</Link>
         </Button>
       </section>
     </div>

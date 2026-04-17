@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 // ── Spy state ──────────────────────────────────────────────────────
 
 type ExecResult = {
@@ -45,8 +47,28 @@ mock.module("@/lib/db/accounts", () => ({
   getGitHubAccount: async () => githubAccountResult,
 }));
 
-mock.module("@/lib/github/user-token", () => ({
-  getUserGitHubToken: async () => repoTokenResult.token,
+mock.module("@/lib/github/workspace-token", () => ({
+  getRepoAccessToken: async () =>
+    repoTokenResult.token
+      ? {
+          token: repoTokenResult.token,
+          source: "user" as const,
+          installationId: null,
+        }
+      : null,
+}));
+
+mock.module("@/lib/git/member-co-author", () => ({
+  getMemberCoAuthorTrailer: async () => null,
+}));
+
+mock.module("@/lib/github/app-auth", () => ({
+  getAppCoAuthorTrailer: async () =>
+    "Co-Authored-By: app[bot] <bot@users.noreply.github.com>",
+  getGithubAppBotGitIdentity: async () => ({
+    name: "testapp[bot]",
+    email: "12345+testapp[bot]@users.noreply.github.com",
+  }),
 }));
 
 const { performAutoCommit } = await import("./auto-commit-direct");
@@ -78,6 +100,7 @@ function makeParams() {
   return {
     sandbox: sandbox as never,
     userId: "user-1",
+    workspaceId: "ws-1",
     sessionId: "session-1",
     sessionTitle: "Fix bug",
     repoOwner: "acme",
@@ -212,7 +235,7 @@ describe("performAutoCommit", () => {
     );
   });
 
-  test("skips git identity when no github account", async () => {
+  test("uses GitHub App bot identity when no linked github account", async () => {
     githubAccountResult = null;
 
     await performAutoCommit(makeParams());
@@ -220,7 +243,8 @@ describe("performAutoCommit", () => {
     const nameCall = execSpy.mock.calls.find((c) =>
       (c[0] as string).includes("git config user.name"),
     );
-    expect(nameCall).toBeUndefined();
+    expect(nameCall).toBeDefined();
+    expect(nameCall![0] as string).toContain("testapp[bot]");
   });
 
   test("uses fallback commit message when diff is empty", async () => {

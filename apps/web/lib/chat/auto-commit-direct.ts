@@ -3,12 +3,19 @@ import { generateText } from "ai";
 import { gateway } from "@open-harness/agent";
 import { getGitHubAccount } from "@/lib/db/accounts";
 import { buildGitHubAuthRemoteUrl } from "@/lib/github/repo-identifiers";
-import { getAppCoAuthorTrailer } from "@/lib/github/app-auth";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import {
+  getAppCoAuthorTrailer,
+  getGithubAppBotGitIdentity,
+} from "@/lib/github/app-auth";
+import { getMemberCoAuthorTrailer } from "@/lib/git/member-co-author";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
 
 export interface AutoCommitParams {
   sandbox: Sandbox;
   userId: string;
+  workspaceId: string;
+  /** Denormalized from session when available. */
+  sessionInstallationId?: number | null;
   sessionId: string;
   sessionTitle: string;
   repoOwner: string;
@@ -30,7 +37,15 @@ export interface AutoCommitResult {
 export async function performAutoCommit(
   params: AutoCommitParams,
 ): Promise<AutoCommitResult> {
-  const { sandbox, userId, sessionTitle, repoOwner, repoName } = params;
+  const {
+    sandbox,
+    userId,
+    workspaceId,
+    sessionInstallationId,
+    sessionTitle,
+    repoOwner,
+    repoName,
+  } = params;
   const cwd = sandbox.workingDirectory;
 
   // 1. Check for uncommitted changes
@@ -40,7 +55,14 @@ export async function performAutoCommit(
   }
 
   // 2. Set up auth on the remote
-  const repoToken = await getUserGitHubToken(userId);
+  const access = await getRepoAccessToken({
+    workspaceId,
+    repoOwner,
+    repoName,
+    userId,
+    sessionInstallationId,
+  });
+  const repoToken = access?.token;
 
   if (repoToken) {
     const authUrl = buildGitHubAuthRemoteUrl({
@@ -69,6 +91,8 @@ export async function performAutoCommit(
 
   // 5. Set git author identity
   const githubAccount = await getGitHubAccount(userId);
+  const botIdentity = await getGithubAppBotGitIdentity();
+
   if (githubAccount?.externalUserId && githubAccount.username) {
     const userEmail = `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`;
     await sandbox.exec(
@@ -77,14 +101,35 @@ export async function performAutoCommit(
       5000,
     );
     await sandbox.exec(`git config user.email '${userEmail}'`, cwd, 5000);
+  } else if (botIdentity) {
+    const esc = (s: string) => s.replace(/'/g, "'\\''");
+    await sandbox.exec(
+      `git config user.name '${esc(botIdentity.name)}'`,
+      cwd,
+      5000,
+    );
+    await sandbox.exec(
+      `git config user.email '${esc(botIdentity.email)}'`,
+      cwd,
+      5000,
+    );
   }
 
-  // 6. Commit with Co-Authored-By trailer for the agent app
+  // 6. Commit with Co-Authored-By trailers (agent; member when committer is app bot)
   const escapedMessage = commitMessage.replace(/'/g, "'\\''");
   const coAuthorTrailer = await getAppCoAuthorTrailer();
-  const trailerArg = coAuthorTrailer
-    ? ` -m '${coAuthorTrailer.replace(/'/g, "'\\''")}'`
-    : "";
+  const memberTrailer = await getMemberCoAuthorTrailer(userId);
+
+  const shellQuoteTrailer = (t: string) => ` -m '${t.replace(/'/g, "'\\''")}'`;
+
+  let trailerArg = "";
+  if (githubAccount?.externalUserId && githubAccount.username) {
+    trailerArg = coAuthorTrailer ? shellQuoteTrailer(coAuthorTrailer) : "";
+  } else {
+    const parts = [coAuthorTrailer, memberTrailer].filter(Boolean) as string[];
+    trailerArg = parts.map(shellQuoteTrailer).join("");
+  }
+
   const commitResult = await sandbox.exec(
     `git commit -m '${escapedMessage}'${trailerArg}`,
     cwd,

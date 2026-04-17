@@ -5,6 +5,10 @@ type AuthSession = { user: { id: string } } | null;
 type SessionRecord = {
   id: string;
   userId: string;
+  workspaceId: string;
+  installationId: number | null;
+  repoOwner: string | null;
+  repoName: string | null;
   branch: string | null;
 };
 
@@ -26,6 +30,10 @@ let authSession: AuthSession = { user: { id: "user-1" } };
 let sessionRecord: SessionRecord | null = {
   id: "session-1",
   userId: "user-1",
+  workspaceId: "ws-1",
+  installationId: null,
+  repoOwner: "acme",
+  repoName: "rocket",
   branch: "feature/auto-merge",
 };
 let createPullRequestResult: CreatePullRequestResult = {
@@ -79,6 +87,14 @@ function registerRouteMocks() {
     getUserGitHubToken: async () => userToken,
   }));
 
+  mock.module("@/lib/github/workspace-token", () => ({
+    getRepoAccessToken: async () => ({
+      token: userToken ?? "user-token",
+      source: "user" as const,
+      installationId: null,
+    }),
+  }));
+
   mock.module("@/lib/github/client", () => ({
     parseGitHubUrl,
     createPullRequest: async (input: Record<string, unknown>) => {
@@ -105,6 +121,10 @@ describe("/api/pr", () => {
     sessionRecord = {
       id: "session-1",
       userId: "user-1",
+      workspaceId: "ws-1",
+      installationId: null,
+      repoOwner: "acme",
+      repoName: "rocket",
       branch: "feature/auto-merge",
     };
     createPullRequestResult = {

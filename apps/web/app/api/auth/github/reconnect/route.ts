@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getPublicAppOriginFromRequestUrl } from "@/lib/http/public-app-origin";
 
 function sanitizeRedirectTo(rawRedirectTo: string | null): string {
   if (!rawRedirectTo) {
@@ -13,8 +14,9 @@ function sanitizeRedirectTo(rawRedirectTo: string | null): string {
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
+  const publicOrigin = getPublicAppOriginFromRequestUrl(req.url);
   const redirectTo = sanitizeRedirectTo(req.nextUrl.searchParams.get("next"));
-  const installUrl = new URL("/api/github/app/install", req.url);
+  const installUrl = new URL("/api/github/app/install", publicOrigin);
   installUrl.searchParams.set("next", redirectTo);
 
   const response = NextResponse.redirect(installUrl);

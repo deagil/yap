@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { encrypt } from "@/lib/crypto";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getPublicAppOriginFromRequestUrl } from "@/lib/http/public-app-origin";
 import { exchangeVercelCode, getVercelUserInfo } from "@/lib/vercel/oauth";
 
 function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
@@ -13,6 +14,7 @@ function clearVercelOauthCookies(store: Awaited<ReturnType<typeof cookies>>) {
 }
 
 export async function GET(req: NextRequest): Promise<Response> {
+  const publicOrigin = getPublicAppOriginFromRequestUrl(req.url);
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state");
   const cookieStore = await cookies();
@@ -40,7 +42,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const session = await getServerSession();
   if (!session?.user?.id) {
-    return NextResponse.redirect(new URL("/sign-in", req.url));
+    return NextResponse.redirect(new URL("/sign-in", publicOrigin));
   }
 
   const clientId = process.env.NEXT_PUBLIC_VERCEL_APP_CLIENT_ID;
@@ -51,7 +53,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   try {
-    const redirectUri = `${req.nextUrl.origin}/api/integrations/vercel/callback`;
+    const redirectUri = `${publicOrigin}/api/integrations/vercel/callback`;
 
     const tokens = await exchangeVercelCode({
       code,
@@ -83,7 +85,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
     clearVercelOauthCookies(cookieStore);
 
-    return NextResponse.redirect(new URL(storedRedirectTo, req.url));
+    return NextResponse.redirect(new URL(storedRedirectTo, publicOrigin));
   } catch (error) {
     console.error("Vercel integration callback error:", error);
     return new Response("Integration failed", { status: 500 });

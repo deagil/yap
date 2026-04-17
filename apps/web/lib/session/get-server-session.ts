@@ -15,7 +15,7 @@ export const getServerSession = cache(
 
     const { data: profile } = await supabase
       .from("users")
-      .select("username, email, name, avatar_url")
+      .select("username, email, name, avatar_url, onboarding_complete")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -36,6 +36,7 @@ export const getServerSession = cache(
           (profile?.avatar_url as string | undefined) ??
           (user.user_metadata?.avatar_url as string | undefined) ??
           "",
+        onboardingComplete: (profile?.onboarding_complete ?? true) === true,
       },
     };
   },

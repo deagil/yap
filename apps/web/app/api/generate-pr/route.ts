@@ -3,22 +3,22 @@ import { botIdConfig } from "@/lib/botid";
 import { connectSandbox } from "@open-harness/sandbox";
 import { gateway, generateText } from "ai";
 import {
-  ensureForkExists,
   extractGitHubOwnerFromRemoteUrl,
-  forkPushRetryConfig,
   generateBranchName,
   isPermissionPushError,
-  isRetryableForkPushError,
   looksLikeCommitHash,
   redactGitHubToken,
-  sleepForForkRetry,
 } from "@/app/api/generate-pr/_lib/generate-pr-helpers";
 import { getGitHubAccount } from "@/lib/db/accounts";
 import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { buildGitHubAuthRemoteUrl } from "@/lib/github/repo-identifiers";
 import { generatePullRequestContentFromSandbox } from "@/lib/git/pr-content";
-import { getUserGitHubToken } from "@/lib/github/user-token";
-import { getAppCoAuthorTrailer } from "@/lib/github/app-auth";
+import { getRepoAccessToken } from "@/lib/github/workspace-token";
+import {
+  getAppCoAuthorTrailer,
+  getGithubAppBotGitIdentity,
+} from "@/lib/github/app-auth";
+import { getMemberCoAuthorTrailer } from "@/lib/git/member-co-author";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -108,7 +108,14 @@ export async function POST(req: Request) {
   let userToken: string | null = null;
 
   if (sessionRecord.repoOwner && sessionRecord.repoName) {
-    userToken = await getUserGitHubToken(session.user.id);
+    const access = await getRepoAccessToken({
+      workspaceId: sessionRecord.workspaceId,
+      repoOwner: sessionRecord.repoOwner,
+      repoName: sessionRecord.repoName,
+      userId: session.user.id,
+      sessionInstallationId: sessionRecord.installationId,
+    });
+    userToken = access?.token ?? null;
     if (!userToken) {
       return Response.json(
         { error: "No GitHub token available for this repository" },
@@ -347,6 +354,8 @@ Respond with ONLY the commit message, nothing else.`,
     // attributed to them. A Co-Authored-By trailer is appended for the GitHub
     // App bot so the agent's involvement is visible in the commit history.
     const githubAccount = await getGitHubAccount(session.user.id);
+    const botIdentity = await getGithubAppBotGitIdentity();
+
     if (githubAccount?.externalUserId && githubAccount.username) {
       const userEmail = `${githubAccount.externalUserId}+${githubAccount.username}@users.noreply.github.com`;
       await sandbox.exec(
@@ -355,13 +364,37 @@ Respond with ONLY the commit message, nothing else.`,
         5000,
       );
       await sandbox.exec(`git config user.email '${userEmail}'`, cwd, 5000);
+    } else if (botIdentity) {
+      const esc = (s: string) => s.replace(/'/g, "'\\''");
+      await sandbox.exec(
+        `git config user.name '${esc(botIdentity.name)}'`,
+        cwd,
+        5000,
+      );
+      await sandbox.exec(
+        `git config user.email '${esc(botIdentity.email)}'`,
+        cwd,
+        5000,
+      );
     }
 
     const escapedMessage = commitMessage.replace(/'/g, "'\\''");
     const coAuthorTrailer = await getAppCoAuthorTrailer();
-    const trailerArg = coAuthorTrailer
-      ? ` -m '${coAuthorTrailer.replace(/'/g, "'\\''")}'`
-      : "";
+    const memberTrailer = await getMemberCoAuthorTrailer(session.user.id);
+
+    const shellQuoteTrailer = (t: string) =>
+      ` -m '${t.replace(/'/g, "'\\''")}'`;
+
+    let trailerArg = "";
+    if (githubAccount?.externalUserId && githubAccount.username) {
+      trailerArg = coAuthorTrailer ? shellQuoteTrailer(coAuthorTrailer) : "";
+    } else {
+      const parts = [coAuthorTrailer, memberTrailer].filter(
+        Boolean,
+      ) as string[];
+      trailerArg = parts.map(shellQuoteTrailer).join("");
+    }
+
     const commitCommand =
       useManualCommitMessage && normalizedManualBody.length > 0
         ? `git commit -m '${escapedMessage}' -m '${normalizedManualBody.replace(/'/g, "'\\''")}'${trailerArg}`
@@ -456,130 +489,8 @@ Respond with ONLY the commit message, nothing else.`,
 
       // Cloud sandboxes backed by Vercel can return empty output on push failure even when
       // the actual error is a permission denial (exitCode 128 with no stderr).
-      // Treat empty-output failures as potential permission errors so fallback
-      // paths (user token, fork) are still attempted.
       if (!isPermissionError && !pushOutput && pushResult.exitCode === 128) {
         isPermissionError = true;
-      }
-
-      if (
-        !gitActions.pushed &&
-        isPermissionError &&
-        sessionRecord.repoOwner &&
-        sessionRecord.repoName
-      ) {
-        const githubAccount = await getGitHubAccount(session.user.id);
-
-        if (userToken && githubAccount?.username) {
-          const forkOwner = githubAccount.username;
-          const forkResult = await ensureForkExists({
-            token: userToken,
-            upstreamOwner: sessionRecord.repoOwner,
-            upstreamRepo: sessionRecord.repoName,
-            forkOwner,
-          });
-
-          if (!forkResult.success) {
-            return Response.json(
-              {
-                error: `Failed to push to upstream and fork fallback failed: ${forkResult.error}`,
-              },
-              { status: 500 },
-            );
-          }
-
-          const { forkRepoName } = forkResult;
-          const forkAuthUrl = `https://x-access-token:${userToken}@github.com/${forkOwner}/${forkRepoName}.git`;
-
-          await sandbox.exec(
-            "git remote remove fork 2>/dev/null || true",
-            cwd,
-            10000,
-          );
-          const addForkResult = await sandbox.exec(
-            `git remote add fork "${forkAuthUrl}"`,
-            cwd,
-            10000,
-          );
-
-          if (!addForkResult.success) {
-            return Response.json(
-              {
-                error: `Failed to configure fork remote: ${(addForkResult.stderr ?? addForkResult.stdout).slice(0, 200)}`,
-              },
-              { status: 500 },
-            );
-          }
-
-          let pushToForkSucceeded = false;
-          let lastPushForkOutput = "";
-
-          for (
-            let attempt = 1;
-            attempt <= forkPushRetryConfig.attempts;
-            attempt += 1
-          ) {
-            const pushForkResult = await sandbox.exec(
-              `GIT_TERMINAL_PROMPT=0 git push --verbose -u fork ${resolvedBranch}`,
-              cwd,
-              60000,
-            );
-
-            if (pushForkResult.success) {
-              pushToForkSucceeded = true;
-              console.log(
-                `[generate-pr] Push to origin denied; pushed branch to fork ${forkOwner}/${forkRepoName}`,
-              );
-              prHeadOwner = forkOwner;
-              gitActions.pushed = true;
-              gitActions.pushedToFork = true;
-              break;
-            }
-
-            lastPushForkOutput =
-              `${pushForkResult.stdout}\n${pushForkResult.stderr ?? ""}`.trim();
-
-            if (
-              isRetryableForkPushError(lastPushForkOutput) &&
-              attempt < forkPushRetryConfig.attempts
-            ) {
-              console.log(
-                `[generate-pr] Fork push retry ${attempt}/${forkPushRetryConfig.attempts}: waiting for fork repository to become available`,
-              );
-              await sleepForForkRetry();
-              continue;
-            }
-
-            break;
-          }
-
-          if (!pushToForkSucceeded) {
-            if (isPermissionPushError(lastPushForkOutput)) {
-              return Response.json(
-                {
-                  error:
-                    "Failed to push to your fork. Ensure your linked GitHub account has permission to create and push to forks.",
-                },
-                { status: 403 },
-              );
-            }
-
-            return Response.json(
-              {
-                error: `Failed to push to fork ${forkOwner}/${forkRepoName}: ${redactGitHubToken(lastPushForkOutput).slice(0, 200)}`,
-              },
-              { status: 500 },
-            );
-          }
-        } else {
-          return Response.json(
-            {
-              error:
-                "Failed to push to upstream and no linked GitHub account is available for fork fallback.",
-            },
-            { status: 500 },
-          );
-        }
       }
 
       if (!gitActions.pushed) {

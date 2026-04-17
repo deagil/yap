@@ -395,6 +395,8 @@ export async function hasAutoCommitChangesStep(params: {
 
 export async function runAutoCommitStep(params: {
   userId: string;
+  workspaceId: string;
+  sessionInstallationId?: number | null;
   sessionId: string;
   sessionTitle: string;
   repoOwner: string;
@@ -409,6 +411,8 @@ export async function runAutoCommitStep(params: {
     return await performAutoCommit({
       sandbox,
       userId: params.userId,
+      workspaceId: params.workspaceId,
+      sessionInstallationId: params.sessionInstallationId,
       sessionId: params.sessionId,
       sessionTitle: params.sessionTitle,
       repoOwner: params.repoOwner,
@@ -426,6 +430,8 @@ export async function runAutoCommitStep(params: {
 
 export async function runAutoCreatePrStep(params: {
   userId: string;
+  workspaceId: string;
+  sessionInstallationId?: number | null;
   sessionId: string;
   sessionTitle: string;
   repoOwner: string;
@@ -440,6 +446,8 @@ export async function runAutoCreatePrStep(params: {
     const result = await performAutoCreatePr({
       sandbox,
       userId: params.userId,
+      workspaceId: params.workspaceId,
+      sessionInstallationId: params.sessionInstallationId,
       sessionId: params.sessionId,
       sessionTitle: params.sessionTitle,
       repoOwner: params.repoOwner,

@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "@/lib/session/get-server-session";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { listGitHubInstallationsForWorkspace } from "@/lib/db/installations";
 import { fetchGitHubOrgs } from "@/lib/github/api";
+import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getServerSession } from "@/lib/session/get-server-session";
+import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
+
+/** Minimal org row compatible with repo-target pickers when using workspace installs only. */
+function orgsFromWorkspaceInstallations(
+  rows: Awaited<ReturnType<typeof listGitHubInstallationsForWorkspace>>,
+) {
+  return rows
+    .filter((r) => r.accountType === "Organization")
+    .map((r) => ({
+      login: r.accountLogin,
+      name: r.accountLogin,
+      avatar_url: "",
+    }));
+}
 
 export async function GET() {
   const session = await getServerSession();
@@ -13,13 +28,26 @@ export async function GET() {
     );
   }
 
+  const workspaceId = await getActiveWorkspaceIdForUser(session.user.id);
   const token = await getUserGitHubToken();
 
   if (!token) {
-    return NextResponse.json(
-      { error: "GitHub not connected" },
-      { status: 401 },
+    if (!workspaceId) {
+      return NextResponse.json(
+        { error: "GitHub not connected" },
+        { status: 401 },
+      );
+    }
+    const fromWorkspace = orgsFromWorkspaceInstallations(
+      await listGitHubInstallationsForWorkspace(workspaceId),
     );
+    if (fromWorkspace.length === 0) {
+      return NextResponse.json(
+        { error: "GitHub not connected" },
+        { status: 401 },
+      );
+    }
+    return NextResponse.json(fromWorkspace);
   }
 
   try {

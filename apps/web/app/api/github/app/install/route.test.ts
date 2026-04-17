@@ -38,6 +38,7 @@ const routeModulePromise = import("./route");
 const originalEnv = {
   NEXT_PUBLIC_GITHUB_APP_SLUG: process.env.NEXT_PUBLIC_GITHUB_APP_SLUG,
   NEXT_PUBLIC_GITHUB_CLIENT_ID: process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID,
+  NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   NODE_ENV: process.env.NODE_ENV,
 };
 
@@ -70,12 +71,14 @@ describe("GET /api/github/app/install", () => {
       NEXT_PUBLIC_GITHUB_CLIENT_ID: "client-id",
       NODE_ENV: "test",
     });
+    delete process.env.NEXT_PUBLIC_APP_URL;
   });
 
   afterEach(() => {
     Object.assign(process.env, {
       NEXT_PUBLIC_GITHUB_APP_SLUG: originalEnv.NEXT_PUBLIC_GITHUB_APP_SLUG,
       NEXT_PUBLIC_GITHUB_CLIENT_ID: originalEnv.NEXT_PUBLIC_GITHUB_CLIENT_ID,
+      NEXT_PUBLIC_APP_URL: originalEnv.NEXT_PUBLIC_APP_URL,
       NODE_ENV: originalEnv.NODE_ENV,
     });
   });
@@ -106,5 +109,25 @@ describe("GET /api/github/app/install", () => {
     const setCookie = response.headers.get("set-cookie") ?? "";
     expect(setCookie).toContain("github_app_install_redirect_to=%2Fsessions");
     expect(setCookie).toContain("github_app_install_state=state-123");
+  });
+
+  test("uses NEXT_PUBLIC_APP_URL for OAuth redirect_uri when set", async () => {
+    process.env.NEXT_PUBLIC_APP_URL = "https://open-harness.localhost";
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      createRequest(
+        "http://localhost:4143/api/github/app/install?next=/sessions",
+        {
+          github_reconnect: "1",
+        },
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = new URL(response.headers.get("location") as string);
+    expect(redirectUrl.searchParams.get("redirect_uri")).toBe(
+      "https://open-harness.localhost/api/github/app/callback",
+    );
   });
 });

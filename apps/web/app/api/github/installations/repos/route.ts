@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInstallationByUserAndId } from "@/lib/db/installations";
-import { listUserInstallationRepositories } from "@/lib/github/installation-repos";
-import { getUserGitHubToken } from "@/lib/github/user-token";
+import { getInstallationByWorkspaceAndInstallationId } from "@/lib/db/installations";
+import { isGitHubAppConfigured } from "@/lib/github/app-auth";
+import { listInstallationRepositoriesForApp } from "@/lib/github/installation-repos";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
@@ -52,9 +52,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const installation = await getInstallationByUserAndId(
+  const installation = await getInstallationByWorkspaceAndInstallationId(
     workspaceId,
-    session.user.id,
     installationId,
   );
   if (!installation) {
@@ -64,18 +63,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const userToken = await getUserGitHubToken(session.user.id);
-  if (!userToken) {
+  if (!isGitHubAppConfigured()) {
     return NextResponse.json(
-      { error: "GitHub not connected" },
-      { status: 401 },
+      {
+        error:
+          "GitHub App is not configured on this deployment (missing GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY).",
+      },
+      { status: 503 },
     );
   }
 
   try {
-    const repos = await listUserInstallationRepositories({
+    const repos = await listInstallationRepositoriesForApp({
       installationId,
-      userToken,
       owner: installation.accountLogin,
       query,
       limit,

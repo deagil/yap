@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { encrypt } from "@/lib/crypto";
 import { getGitHubAccount, upsertGitHubAccount } from "@/lib/db/accounts";
 import { syncUserInstallations } from "@/lib/github/installations-sync";
+import { getPublicAppOriginFromRequestUrl } from "@/lib/http/public-app-origin";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getActiveWorkspaceIdForUser } from "@/lib/workspace/context";
 
@@ -46,6 +47,7 @@ function sanitizeRedirectTo(rawRedirectTo: string | null | undefined): string {
 async function exchangeOAuthCode(
   code: string,
   userId: string,
+  redirectUri: string,
 ): Promise<{
   token: string;
   githubUserId: string;
@@ -72,6 +74,7 @@ async function exchangeOAuthCode(
           client_id: clientId,
           client_secret: clientSecret,
           code,
+          redirect_uri: redirectUri,
         }),
       },
     );
@@ -143,6 +146,11 @@ function redirectAndClearCookies(url: string | URL): NextResponse {
 
 export async function GET(req: Request): Promise<Response> {
   const requestUrl = new URL(req.url);
+  const publicOrigin = getPublicAppOriginFromRequestUrl(req.url);
+  const oauthRedirectUri = new URL(
+    "/api/github/app/callback",
+    publicOrigin,
+  ).toString();
   const cookieStore = await cookies();
   const redirectTo = sanitizeRedirectTo(
     cookieStore.get("github_app_install_redirect_to")?.value,
@@ -150,7 +158,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const session = await getServerSession();
   if (!session?.user?.id) {
-    const signinUrl = new URL("/sign-in", req.url);
+    const signinUrl = new URL("/sign-in", publicOrigin);
     signinUrl.searchParams.set(
       "next",
       `${requestUrl.pathname}${requestUrl.search}`,
@@ -158,7 +166,7 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(signinUrl);
   }
 
-  const redirectUrl = new URL(redirectTo, req.url);
+  const redirectUrl = new URL(redirectTo, publicOrigin);
   const installationId = parseInstallationId(
     requestUrl.searchParams.get("installation_id"),
   );
@@ -189,7 +197,11 @@ export async function GET(req: Request): Promise<Response> {
   } | null = null;
 
   if (oauthCode) {
-    oauthResult = await exchangeOAuthCode(oauthCode, session.user.id);
+    oauthResult = await exchangeOAuthCode(
+      oauthCode,
+      session.user.id,
+      oauthRedirectUri,
+    );
   }
 
   // ── Step 2: Sync installations from user-scoped data ──────────────────
@@ -231,7 +243,7 @@ export async function GET(req: Request): Promise<Response> {
     syncedInstallationsCount !== null && syncedInstallationsCount > 0;
 
   if (oauthResult && !installationId && !hasExistingInstallations) {
-    const installUrl = new URL("/api/github/app/install", req.url);
+    const installUrl = new URL("/api/github/app/install", publicOrigin);
     installUrl.searchParams.set("target_id", oauthResult.githubUserId);
     installUrl.searchParams.set("next", redirectTo);
     // Don't clear cookies — the install route will set fresh ones
